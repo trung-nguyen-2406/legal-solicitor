@@ -28,11 +28,9 @@ def test_local_reranker():
         {"chunk_id": "c2", "raw_content": "Khai hoang đất rừng phòng hộ phục vụ sản xuất lâm nghiệp nông thôn."}
     ]
     results = service.rerank(query, candidates, top_n=2, threshold=0.35)
-    assert len(results) == 2
+    assert len(results) == 1
     assert results[0]["chunk_id"] == "c1"
-    assert results[0]["rerank_score"] > results[1]["rerank_score"]
     assert results[0]["passed_threshold"] is True
-    assert results[1]["passed_threshold"] is False
 
 if __name__ == "__main__":
     test_ollama_local_qwen()

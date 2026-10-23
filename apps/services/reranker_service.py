@@ -10,6 +10,8 @@ class RerankerService:
         return 1.0 / (1.0 + math.exp(-x))
 
     def compute_score(self, pairs: List[List[str]], batch_size: int = 16) -> List[float]:
+        if not pairs:
+            return []
         raw_scores = self.model.compute_score(pairs, batch_size=batch_size, normalize=False)
         if isinstance(raw_scores, (int, float)):
             return [self._sigmoid(float(raw_scores))]
@@ -23,6 +25,8 @@ class RerankerService:
         threshold: float = 0.35,
         batch_size: int = 16
     ) -> List[Dict[str, Any]]:
+        if not candidates:
+            return []
         pairs = [[query, c.get("raw_content", "")] for c in candidates]
         scores = self.compute_score(pairs, batch_size=batch_size)
 
@@ -34,4 +38,5 @@ class RerankerService:
             scored_candidates.append(item)
 
         scored_candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
-        return scored_candidates[:top_n]
+        filtered = [c for c in scored_candidates if c["passed_threshold"]]
+        return filtered[:top_n]

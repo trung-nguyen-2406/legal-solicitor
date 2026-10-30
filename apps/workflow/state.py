@@ -67,6 +67,8 @@ class LegalRAGState(TypedDict, total=False):
     sparse_indices: List[int]
     sparse_values: List[float]
     fast_branch: str
+    rrf_candidates: List[Dict[str, Any]]
+    raw_logits: List[float]
     max_score: float
     abstain_reason: Optional[str]
     planner_decision: Optional[Dict[str, Any]]

@@ -233,21 +233,7 @@ def evaluate(
             }, f, ensure_ascii=False, indent=2)
 
         mlflow.log_artifact(results_file)
-
-        # Generate and log human-readable reports
-        from scripts.export_human_readable_results import generate_reports
-        analytics_file = "results/benchmark_analytics.txt"
-        incorrect_file = "results/incorrect_retrievals.txt"
-        generate_reports(
-            details_path=results_file,
-            dataset_path=dataset_path,
-            analytics_out=analytics_file,
-            incorrect_out=incorrect_file
-        )
-        mlflow.log_artifact(analytics_file)
-        mlflow.log_artifact(incorrect_file)
-        print(f"Logged run parameters, metrics, and artifacts to MLflow experiment '{experiment_name}'.")
-
+        
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run RAG Hybrid Retrieval & Reranking MLflow Benchmark")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of queries to evaluate")

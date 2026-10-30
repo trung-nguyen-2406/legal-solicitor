@@ -8,3 +8,4 @@ archive
 mlruns
 *.db
 mlflow.db-*
+.vscode

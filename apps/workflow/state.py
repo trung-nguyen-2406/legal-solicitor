@@ -15,8 +15,18 @@ def merge_latency(left: Optional[Dict[str, float]], right: Optional[Dict[str, fl
 def merge_chunk_bank(left: Optional[Dict[str, Dict[str, Any]]], right: Optional[Dict[str, Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
     merged = dict(left or {})
     for cid, chunk in (right or {}).items():
-        if cid not in merged or float(chunk.get("rerank_score", 0.0)) > float(merged[cid].get("rerank_score", 0.0)):
+        if cid not in merged:
             merged[cid] = chunk
+        else:
+            curr_rerank = float(merged[cid].get("rerank_score", 0.0))
+            new_rerank = float(chunk.get("rerank_score", 0.0))
+            if new_rerank > curr_rerank:
+                merged[cid] = chunk
+            elif new_rerank == curr_rerank:
+                curr_rrf = float(merged[cid].get("rrf_score", 0.0))
+                new_rrf = float(chunk.get("rrf_score", 0.0))
+                if new_rrf >= curr_rrf:
+                    merged[cid] = chunk
     return merged
 
 

@@ -4,7 +4,7 @@ import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
-    import ahocorasick
+    import ahocorasick # type: ignore[import-untyped, import-not-found]
 except ImportError:
     ahocorasick = None
 

@@ -1,8 +1,7 @@
 import re
 from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient, models
-from apps.services.embedding_service import EmbeddingService
-from apps.services.reranker_service import RerankerService
+from apps.services.embedding_service import EmbeddingService, Int8Reranker
 
 RE_DOC_NUMBER = re.compile(r"\b(\d+/\d{4}/[A-ZĐ0-9\-]+)\b")
 RE_ARTICLE = re.compile(r"\bĐiều\s+(\d+[a-zđ]?)\b", re.IGNORECASE)
@@ -12,7 +11,7 @@ class RetrieverService:
         self,
         qdrant_client: QdrantClient,
         embedding_service: EmbeddingService,
-        reranker_service: RerankerService,
+        reranker_service: Int8Reranker,
         collection_name: str = "legal_chunks_v1"
     ):
         self.client = qdrant_client

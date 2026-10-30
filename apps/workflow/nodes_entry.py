@@ -1,52 +1,14 @@
 import json
-import os
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal
 import numpy as np
-import redis
 
-from apps.services.descriptor_service import QueryDescriptorService
-from apps.services.embedding_service import EmbeddingService
+from apps.services.resources import (
+    get_descriptor_service,
+    get_domain_probe,
+    get_embedding_service,
+    get_redis_client,
+)
 from apps.workflow.state import LegalRAGState, traced_node
-
-_redis_client: Optional[redis.Redis] = None
-_descriptor_service: Optional[QueryDescriptorService] = None
-_embedding_service: Optional[EmbeddingService] = None
-_domain_probe: Optional[Dict[str, Any]] = None
-
-
-def get_redis_client() -> Optional[redis.Redis]:
-    global _redis_client
-    if _redis_client is None:
-        dsn = os.getenv("REDIS_DSN") or os.getenv("UPSTASH_REDIS_REST_URL")
-        if dsn:
-            _redis_client = redis.from_url(dsn, decode_responses=True)
-    return _redis_client
-
-
-def get_descriptor_service() -> QueryDescriptorService:
-    global _descriptor_service
-    if _descriptor_service is None:
-        _descriptor_service = QueryDescriptorService()
-    return _descriptor_service
-
-
-def get_embedding_service() -> EmbeddingService:
-    global _embedding_service
-    if _embedding_service is None:
-        model_path = "models/bge-m3" if os.path.isdir("models/bge-m3") else "BAAI/bge-m3"
-        _embedding_service = EmbeddingService(model_name_or_path=model_path, device="cpu", use_fp16=False)
-    return _embedding_service
-
-
-def get_domain_probe() -> Dict[str, Any]:
-    global _domain_probe
-    if _domain_probe is None:
-        path = "models/linear_domain_probe.npz"
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Required linear domain probe model not found at {path}")
-        data = np.load(path)
-        _domain_probe = {"w": data["w"].astype(np.float32), "b": float(data["b"])}
-    return _domain_probe
 
 
 @traced_node("PureRedisCacheCheckNode")

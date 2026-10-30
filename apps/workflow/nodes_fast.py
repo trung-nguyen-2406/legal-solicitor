@@ -1,15 +1,18 @@
 from collections import defaultdict
-import os
 import re
 from typing import Any, Dict, List, Literal, Optional, Set
-from dotenv import load_dotenv
-from qdrant_client import QdrantClient, models
+from qdrant_client import models
 
-from apps.services.db_service import DatabaseService
-from apps.services.embedding_service import Int8Reranker
 from apps.services.post_rerank_service import (
     apply_temporal_dedup_quota_and_pin,
     pre_rerank_diversify,
+)
+from apps.services.resources import (
+    get_collection_name,
+    get_db_service,
+    get_int8_reranker,
+    get_qdrant_client,
+    get_qdrant_indexed_fields,
 )
 from apps.workflow.state import LegalRAGState, traced_node
 
@@ -27,55 +30,6 @@ LEGAL_FIELD_KEYWORDS = (
     "bảo hiểm", "tiền tệ", "ngân hàng", "thuế", "tài chính", "lao động", "giáo dục",
     "y tế", "giao thông", "tài nguyên", "môi trường", "hình sự", "dân sự", "hành chính",
 )
-
-_qdrant_client: Optional[QdrantClient] = None
-_qdrant_indexed_fields: Optional[Set[str]] = None
-_db_service: Optional[DatabaseService] = None
-_int8_reranker: Optional[Int8Reranker] = None
-
-
-def get_qdrant_client() -> QdrantClient:
-    global _qdrant_client
-    if _qdrant_client is None:
-        load_dotenv(".env")
-        host = os.getenv("QDRANT_HOST", "").rstrip("/")
-        api_key = os.getenv("QDRANT_API_KEY")
-        _qdrant_client = QdrantClient(url=host, api_key=api_key, timeout=30.0)
-    return _qdrant_client
-
-
-def get_collection_name() -> str:
-    return os.getenv("QDRANT_COLLECTION", "legal_chunks_v1")
-
-
-def get_qdrant_indexed_fields() -> Set[str]:
-    global _qdrant_indexed_fields
-    if _qdrant_indexed_fields is None:
-        info = get_qdrant_client().get_collection(get_collection_name())
-        _qdrant_indexed_fields = set((info.payload_schema or {}).keys())
-    return _qdrant_indexed_fields
-
-
-def get_db_service() -> DatabaseService:
-    global _db_service
-    if _db_service is None:
-        _db_service = DatabaseService()
-    return _db_service
-
-
-def get_int8_reranker() -> Int8Reranker:
-    global _int8_reranker
-    if _int8_reranker is None:
-        load_dotenv(".env")
-        env_path = os.getenv("RERANKER_MODEL_PATH", "")
-        if env_path and os.path.exists(env_path):
-            model_path = env_path
-        elif os.path.isdir("models/bge-reranker-v2-m3"):
-            model_path = "models/bge-reranker-v2-m3"
-        else:
-            model_path = "BAAI/bge-reranker-v2-m3"
-        _int8_reranker = Int8Reranker(model_path=model_path)
-    return _int8_reranker
 
 
 def _point_to_dict(

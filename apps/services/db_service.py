@@ -1,7 +1,7 @@
 import os
 import re
 import uuid
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 from dotenv import load_dotenv
 import psycopg2
 
@@ -294,10 +294,11 @@ class DatabaseService:
                            WHEN dr.source_doc_id = l.doc_id THEN dr.target_doc_id
                            ELSE dr.source_doc_id
                          END
-                    WHERE l.depth < 5
+                    WHERE l.depth < 4
+                      AND LOWER(dr.relation_type) = ANY(%s)
                       AND NOT (nxt.doc_id = ANY(l.visited))
                 )
-                SELECT DISTINCT lc.chunk_id::text, lc.raw_content, lc.breadcrumb,
+                SELECT lc.chunk_id::text, lc.raw_content, lc.breadcrumb,
                        ld.doc_id::text, ld.doc_number, ld.doc_title, ld.doc_type,
                        EXTRACT(YEAR FROM ld.issued_date)::int,
                        ld.effective_status, ld.legal_field
@@ -306,16 +307,24 @@ class DatabaseService:
                 JOIN legal_chunks lc ON lc.doc_id = ld.doc_id
                 WHERE l.depth > 0
                   AND ld.effective_status != 'expired'
+                ORDER BY l.depth ASC, ld.issued_date DESC
                 LIMIT %s
                 """,
-                (doc_number, limit),
+                (doc_number, list(AMENDING_RELATIONS), limit),
             )
             rows = cur.fetchall()
 
         results: List[Dict[str, Any]] = []
+        seen_art: Set[Tuple[str, str]] = set()
         for row in rows:
             item = _row_to_chunk(row)
+            doc_art = (item["doc_number"], item["article_code"])
+            if doc_art in seen_art:
+                continue
+            seen_art.add(doc_art)
             item["rerank_score"] = 0.85
             results.append(item)
+            if len(results) >= limit:
+                break
         return results
 

@@ -16,8 +16,7 @@ import mlflow
 
 load_dotenv("c:/Users/quytr/Documents/code/VCC-project/.env")
 
-from apps.services.embedding_service import EmbeddingService
-from apps.services.reranker_service import RerankerService
+from apps.services.embedding_service import EmbeddingService, Int8Reranker
 from apps.services.retriever_service import RetrieverService
 
 def match_target(cand: Dict[str, Any], target: Dict[str, Any]) -> bool:
@@ -57,8 +56,8 @@ def evaluate(
     print("Initializing EmbeddingService (BGE-M3)...")
     embed_service = EmbeddingService(model_name_or_path="models/bge-m3", use_fp16=False, device="cpu")
 
-    print("Initializing RerankerService (BGE-Reranker-v2-m3)...")
-    reranker_service = RerankerService(model_path="models/bge-reranker-v2-m3", device="cpu", use_fp16=False)
+    print("Initializing Int8Reranker (BGE-Reranker-v2-m3 INT8)...")
+    reranker_service = Int8Reranker(model_path="models/bge-reranker-v2-m3")
 
     print("Initializing RetrieverService...")
     retriever = RetrieverService(

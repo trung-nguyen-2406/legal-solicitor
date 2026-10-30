@@ -1,5 +1,5 @@
 import httpx
-from apps.services.reranker_service import RerankerService
+from apps.services.embedding_service import Int8Reranker
 
 def test_ollama_local_qwen():
     url = "http://127.0.0.1:11434/api/generate"
@@ -21,7 +21,7 @@ def test_ollama_local_qwen():
         assert len(data["response"].strip()) > 0
 
 def test_local_reranker():
-    service = RerankerService(model_path="models/bge-reranker-v2-m3", device="cpu")
+    service = Int8Reranker(model_path="models/bge-reranker-v2-m3")
     query = "Quy định về an toàn giao thông đường bộ"
     candidates = [
         {"chunk_id": "c1", "raw_content": "Luật này quy định về quy tắc giao thông đường bộ, phương tiện tham gia giao thông."},

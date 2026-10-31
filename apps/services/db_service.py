@@ -81,8 +81,24 @@ class DatabaseService:
     def _get_conn(self):
         if not self.dsn:
             return None
+        if self._conn is not None and self._conn.closed == 0:
+            try:
+                with self._conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._conn = None
         if self._conn is None or self._conn.closed != 0:
-            self._conn = psycopg2.connect(self.dsn)
+            self._conn = psycopg2.connect(
+                self.dsn,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5,
+            )
             self._conn.autocommit = True
         return self._conn
 

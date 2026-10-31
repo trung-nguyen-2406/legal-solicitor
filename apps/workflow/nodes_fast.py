@@ -1,6 +1,7 @@
 from collections import defaultdict
 import re
-from typing import Any, Dict, List, Literal, Optional, Set
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple
+import numpy as np
 from qdrant_client import models
 
 from apps.services.post_rerank_service import (
@@ -10,6 +11,7 @@ from apps.services.post_rerank_service import (
 from apps.services.resources import (
     get_collection_name,
     get_db_service,
+    get_embedding_service,
     get_int8_reranker,
     get_qdrant_client,
     get_qdrant_indexed_fields,
@@ -68,6 +70,8 @@ def _active_filter(
     doc_numbers: Optional[List[str]] = None,
     article_code: Optional[str] = None,
     issued_year: Optional[int] = None,
+    year_from: Optional[int] = None,
+    year_to: Optional[int] = None,
     legal_field: Optional[str] = None,
 ) -> models.Filter:
     must: List[Any] = []
@@ -78,7 +82,12 @@ def _active_filter(
             must.append(models.FieldCondition(key="doc_number", match=models.MatchAny(any=doc_numbers)))
     if article_code:
         must.append(models.FieldCondition(key="article_code", match=models.MatchValue(value=article_code)))
-    if issued_year is not None:
+    if year_from is not None and year_to is not None:
+        if year_from == year_to:
+            must.append(models.FieldCondition(key="issued_year", match=models.MatchValue(value=int(year_from))))
+        else:
+            must.append(models.FieldCondition(key="issued_year", range=models.Range(gte=int(year_from), lte=int(year_to))))
+    elif issued_year is not None:
         must.append(models.FieldCondition(key="issued_year", match=models.MatchValue(value=int(issued_year))))
     if legal_field and "legal_field" in get_qdrant_indexed_fields():
         must.append(models.FieldCondition(key="legal_field", match=models.MatchValue(value=legal_field)))
@@ -205,58 +214,141 @@ def FilteredSemanticOrLineageAggNode(state: LegalRAGState) -> Dict[str, Any]:
     db = get_db_service()
 
     asks_lineage = bool(doc_filters) and any(kw in q_lower for kw in LINEAGE_KEYWORDS)
-    agg_chunks: List[Dict[str, Any]] = []
     if asks_lineage:
         agg_chunks = db.fetch_amendment_lineage_cte(doc_filters[0], limit=AGG_LIMIT)
+        bank = {c["chunk_id"]: c for c in agg_chunks}
+        top_chunks = agg_chunks[:5] if len(agg_chunks) > 5 else agg_chunks
+        max_score = max((float(c.get("rerank_score", 0.0)) for c in agg_chunks), default=0.0)
+        return {
+            "fast_branch": "aggregation",
+            "execution_mode": "fast_path",
+            "inventory_table": _build_inventory_table(agg_chunks),
+            "top_chunks": top_chunks,
+            "chunk_bank": bank,
+            "max_score": max_score,
+            "exact_agg_count": len(agg_chunks),
+            "agg_catalog_items": agg_chunks,
+            "pointer_scratchpad": top_chunks,
+        }
 
-    if not agg_chunks:
-        yr_m = RE_YEAR_FILTER.search(query)
-        issued_year = int(yr_m.group(1)) if yr_m else None
-        detected_field = next((kw for kw in LEGAL_FIELD_KEYWORDS if kw in q_lower), None)
+    sub_queries = state.get("sub_queries") or [state.get("cleaned_query") or query]
+    anchor_keywords = state.get("anchor_keywords") or []
+    year_from = state.get("year_from")
+    year_to = state.get("year_to")
+    detected_field = next((kw for kw in LEGAL_FIELD_KEYWORDS if kw in q_lower), None)
 
-        qfilter = _active_filter(
-            doc_numbers=doc_filters or None,
-            issued_year=issued_year,
-            legal_field=detected_field,
-        )
-        pts = get_qdrant_client().query_points(
-            collection_name=get_collection_name(),
-            query=state["dense_vector"],
-            using="dense_vector",
-            query_filter=qfilter,
-            score_threshold=AGG_SCORE_THRESHOLD,
-            limit=AGG_LIMIT,
-            with_payload=True,
+    qfilter = _active_filter(
+        doc_numbers=doc_filters or None,
+        year_from=year_from,
+        year_to=year_to,
+        legal_field=detected_field,
+    )
+
+    client = get_qdrant_client()
+    collection = get_collection_name()
+    embed_svc = get_embedding_service()
+
+    sweep_payload_fields = [
+        "doc_id", "doc_number", "doc_title", "article_code",
+        "clause_code", "issued_year", "legal_field", "breadcrumb", "anchor_tag"
+    ]
+
+    all_sweep_candidates: List[Dict[str, Any]] = []
+
+    for sq in sub_queries:
+        enc = embed_svc.encode(sq)
+        sq_dense = enc["dense"]
+        sq_sparse_ind = enc["sparse"]["indices"]
+        sq_sparse_val = enc["sparse"]["values"]
+
+        prefetch = [
+            models.Prefetch(query=sq_dense, using="dense_vector", filter=qfilter, limit=300),
+            models.Prefetch(
+                query=models.SparseVector(indices=sq_sparse_ind, values=sq_sparse_val),
+                using="sparse_vector",
+                filter=qfilter,
+                limit=300,
+            ),
+        ]
+        pts = client.query_points(
+            collection_name=collection,
+            prefetch=prefetch,
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
+            limit=300,
+            with_payload=sweep_payload_fields,
         ).points
 
-        raw_chunks = [
-            _point_to_dict(pt, rank=idx + 1, rerank_override=float(getattr(pt, "score", 0.0) or 0.0))
-            for idx, pt in enumerate(pts)
-        ]
-        hydrated = db.hydrate_chunks(raw_chunks)
-        if detected_field and "legal_field" not in get_qdrant_indexed_fields():
-            field_filtered = [c for c in hydrated if detected_field in (c.get("legal_field") or "").lower()]
-            if field_filtered:
-                hydrated = field_filtered
-        agg_chunks = hydrated
+        if not pts:
+            continue
 
-    bank = {c["chunk_id"]: c for c in agg_chunks}
-    if len(agg_chunks) > AGG_VERBATIM_LIMIT:
-        inventory_table: Optional[str] = _build_inventory_table(agg_chunks)
-        top_chunks = agg_chunks[:5]
-    else:
-        inventory_table = None
-        top_chunks = agg_chunks
+        top1_rrf_score = float(getattr(pts[0], "score", 0.0) or 0.0)
+        elbow_threshold = 0.72 * top1_rrf_score
 
-    max_score = max((float(c.get("rerank_score", 0.0)) for c in agg_chunks), default=0.0)
+        retained = [pt for pt in pts if float(getattr(pt, "score", 0.0) or 0.0) >= elbow_threshold]
+
+        for idx, pt in enumerate(retained):
+            c_dict = _point_to_dict(pt, rank=idx + 1)
+            if anchor_keywords:
+                title_txt = (c_dict.get("doc_title") or "").lower()
+                crumb_txt = (c_dict.get("breadcrumb") or "").lower()
+                combined_txt = f"{title_txt} {crumb_txt}"
+                if not any(ak in combined_txt for ak in anchor_keywords):
+                    continue
+            all_sweep_candidates.append(c_dict)
+
+    deduped_by_article: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for cand in all_sweep_candidates:
+        doc = cand.get("doc_number") or ""
+        art = cand.get("article_code") or ""
+        key = (doc, art)
+        if key not in deduped_by_article or float(cand.get("rrf_score", 0.0)) > float(deduped_by_article[key].get("rrf_score", 0.0)):
+            deduped_by_article[key] = cand
+
+    sorted_articles = sorted(deduped_by_article.values(), key=lambda c: float(c.get("rrf_score", 0.0)), reverse=True)
+    exact_agg_count = len(sorted_articles)
+
+    top_5_diverse: List[Dict[str, Any]] = []
+    seen_docs: Set[str] = set()
+    for art in sorted_articles:
+        doc = art.get("doc_number") or ""
+        if doc and doc not in seen_docs:
+            top_5_diverse.append(art)
+            seen_docs.add(doc)
+            if len(top_5_diverse) == 5:
+                break
+    if len(top_5_diverse) < 5:
+        for art in sorted_articles:
+            if art not in top_5_diverse:
+                top_5_diverse.append(art)
+                if len(top_5_diverse) == 5:
+                    break
+
+    hydrated_top_5 = db.hydrate_chunks(top_5_diverse) if top_5_diverse else []
+
+    max_score = 0.0
+    if hydrated_top_5:
+        top_3 = hydrated_top_5[:3]
+        query_for_rerank = state.get("cleaned_query") or query
+        raw_logits = get_int8_reranker().rerank_logits(query_for_rerank, top_3)
+        for c, lg in zip(top_3, raw_logits):
+            sc = 1.0 / (1.0 + np.exp(-float(lg)))
+            c["rerank_score"] = round(float(sc), 4)
+        rerank_scores = [float(c.get("rerank_score", 0.0)) for c in top_3]
+        max_score = max(rerank_scores, default=0.0)
+
+    inventory_table = _build_inventory_table(sorted_articles) if sorted_articles else None
+    bank = {c["chunk_id"]: c for c in hydrated_top_5}
+
     return {
         "fast_branch": "aggregation",
         "execution_mode": "fast_path",
         "inventory_table": inventory_table,
-        "top_chunks": top_chunks,
+        "top_chunks": hydrated_top_5,
         "chunk_bank": bank,
         "max_score": max_score,
-        "pointer_scratchpad": top_chunks,
+        "exact_agg_count": exact_agg_count,
+        "agg_catalog_items": sorted_articles,
+        "pointer_scratchpad": hydrated_top_5,
     }
 
 
@@ -371,8 +463,8 @@ def Top10PruneAndInt8RerankNode(state: LegalRAGState) -> Dict[str, Any]:
 
     diversified = pre_rerank_diversify(
         rrf_candidates=rrf_candidates,
-        target_k=12,
-        soft_doc_cap=3,
+        target_k=25,
+        soft_doc_cap=5,
         doc_filters=state.get("doc_filters"),
     )
     hydrated = get_db_service().hydrate_chunks(diversified)
@@ -392,23 +484,30 @@ def DedupQuotaAndTemporalBoostNode(state: LegalRAGState) -> Dict[str, Any]:
     if not candidates or not raw_logits:
         return {
             "top_chunks": [],
+            "retrieved_top_25": [],
             "max_score": 0.0,
         }
 
-    top_chunks = apply_temporal_dedup_quota_and_pin(
+    top_chunks, deduped_25 = apply_temporal_dedup_quota_and_pin(
         candidates=candidates,
         raw_logits=raw_logits,
         doc_filters=state.get("doc_filters") or [],
         db_service=get_db_service(),
         top_n=5,
+        return_all_deduped=True,
     )
 
     non_pinned_scores = [float(c.get("rerank_score", 0.0)) for c in top_chunks if not c.get("is_pinned_amendment")]
     max_score = max(non_pinned_scores, default=0.0)
 
     bank_updates: Dict[str, Dict[str, Any]] = {c["chunk_id"]: c for c in top_chunks}
+    for c in deduped_25:
+        if c["chunk_id"] not in bank_updates:
+            bank_updates[c["chunk_id"]] = c
+
     return {
         "top_chunks": top_chunks,
+        "retrieved_top_25": deduped_25,
         "max_score": max_score,
         "chunk_bank": bank_updates,
         "pointer_scratchpad": [

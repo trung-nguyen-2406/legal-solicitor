@@ -1,6 +1,9 @@
 from collections import defaultdict, deque
+import os
 import sys
 from typing import Dict, Set
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

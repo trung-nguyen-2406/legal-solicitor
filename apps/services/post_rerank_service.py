@@ -80,9 +80,10 @@ def apply_temporal_dedup_quota_and_pin(
     doc_filters: Optional[List[str]],
     db_service: Optional[Any],
     top_n: int = 5,
-) -> List[Dict[str, Any]]:
+    return_all_deduped: bool = False,
+) -> Any:
     if not candidates or not raw_logits:
-        return []
+        return ([], []) if return_all_deduped else []
 
     scored: List[Dict[str, Any]] = []
     for cand, raw_logit in zip(candidates, raw_logits):
@@ -135,5 +136,7 @@ def apply_temporal_dedup_quota_and_pin(
             p["rerank_score"] = base_pin_score
             top_selected.append(p)
 
+    if return_all_deduped:
+        return top_selected, deduped[:25]
     return top_selected
 

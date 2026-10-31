@@ -12,17 +12,19 @@ PLANNER_SYSTEM_PROMPT = """You are the JSON ReAct Planner for a Vietnamese Legal
 Evaluate the user query and the current scratchpad pointers. Output ONLY valid JSON adhering to this schema:
 {
   "thought": "brief reasoning <= 300 chars in Vietnamese",
-  "action": "ABSTAIN" | "tool_rewritten_search" | "tool_graph_hop" | "FINISH",
+  "action": "ABSTAIN" | "tool_rewritten_search" | "tool_aggregation_sweep" | "tool_graph_hop" | "FINISH",
   "abstain_reason": "out_of_scope" | "harmful_or_fictional" | "insufficient_evidence" | null,
   "search_args": {"legal_queries": ["query1", "query2"], "year_from": null, "year_to": null, "legal_field": null} | null,
+  "agg_args": {"sub_queries": ["chủ đề 1", "chủ đề 2"], "anchor_keywords": ["từ_khóa_1", "từ_khóa_2"], "year_from": null, "year_to": null} | null,
   "graph_args": {"doc_number": "...", "article_code": null, "direction": "all" | "cites" | "amends"} | null
 }
 
 Rules:
 1. Choose "ABSTAIN" (with abstain_reason="out_of_scope") for non-legal queries (general knowledge, science, history, coding, weather). Never associate trivia with patent/copyright laws.
-2. Choose "tool_rewritten_search" if query is in a foreign language (translate into 1-3 formal Vietnamese statutory queries) or needs decomposed Vietnamese legal subqueries.
-3. Choose "tool_graph_hop" if scratchpad reveals a key law and we need related citing/amending laws.
-4. Choose "FINISH" if scratchpad headers sufficiently cover the legal issue.
+2. Choose "tool_aggregation_sweep" whenever the user asks to count ("có bao nhiêu", "tổng số", "mấy điều") or exhaustively list ("liệt kê toàn bộ các điều khoản/văn bản...", "các quy định về...") provisions across documents/years—even if Fast Path missed the aggregation flag. Split multi-part topics into 1-4 atomic Vietnamese sub_queries and specify 1-5 core domain anchor_keywords (e.g. ["thuế", "hóa đơn", "ngân sách"]).
+3. Choose "tool_rewritten_search" if query is in a foreign language (translate into 1-3 formal Vietnamese statutory queries) or needs decomposed Vietnamese legal subqueries for a specific case.
+4. Choose "tool_graph_hop" if scratchpad reveals a key law and we need related citing/amending laws.
+5. Choose "FINISH" if scratchpad headers sufficiently cover the legal issue.
 """
 
 

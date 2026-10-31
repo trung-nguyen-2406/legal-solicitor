@@ -39,6 +39,7 @@ from apps.workflow.nodes_react import (
     DedupQuotaAndAmendmentPinNode,
     FinalChunkBankInt8RerankNode,
     Qwen7BJsonPlannerNode,
+    ToolAggregationSweepNode,
     ToolGraphHopNode,
     ToolRewrittenSearchNode,
     route_escalation_gate,
@@ -63,6 +64,7 @@ EXPECTED_NODES = (
     "Qwen7BJsonPlannerNode",
     "ToolRewrittenSearchNode",
     "ToolGraphHopNode",
+    "ToolAggregationSweepNode",
     "FinalChunkBankInt8RerankNode",
     "DedupQuotaAndAmendmentPinNode",
     "ConfidenceGate",
@@ -120,6 +122,7 @@ def build_legal_rag_workflow() -> StateGraph:
     workflow.add_node("Qwen7BJsonPlannerNode", Qwen7BJsonPlannerNode)
     workflow.add_node("ToolRewrittenSearchNode", ToolRewrittenSearchNode)
     workflow.add_node("ToolGraphHopNode", ToolGraphHopNode)
+    workflow.add_node("ToolAggregationSweepNode", ToolAggregationSweepNode)
     workflow.add_node("FinalChunkBankInt8RerankNode", FinalChunkBankInt8RerankNode)
     workflow.add_node("DedupQuotaAndAmendmentPinNode", DedupQuotaAndAmendmentPinNode)
 
@@ -178,12 +181,14 @@ def build_legal_rag_workflow() -> StateGraph:
         {
             "abstain": "AbstainWithReasonNode",
             "rewritten_search": "ToolRewrittenSearchNode",
+            "aggregation_sweep": "ToolAggregationSweepNode",
             "graph_hop": "ToolGraphHopNode",
             "finish_react": "FinalChunkBankInt8RerankNode",
         },
     )
     workflow.add_edge("ToolRewrittenSearchNode", "Qwen7BJsonPlannerNode")
     workflow.add_edge("ToolGraphHopNode", "Qwen7BJsonPlannerNode")
+    workflow.add_edge("ToolAggregationSweepNode", "ConfidenceGate")
     workflow.add_edge("FinalChunkBankInt8RerankNode", "DedupQuotaAndAmendmentPinNode")
     workflow.add_edge("DedupQuotaAndAmendmentPinNode", "ConfidenceGate")
 

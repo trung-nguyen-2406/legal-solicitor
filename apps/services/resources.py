@@ -76,8 +76,26 @@ def get_redis_client() -> Optional[redis.Redis]:
     if _redis_client is None:
         dsn = os.getenv("REDIS_DSN") or os.getenv("UPSTASH_REDIS_REST_URL")
         if dsn:
-            _redis_client = redis.from_url(dsn, decode_responses=True)
+            _redis_client = redis.from_url(
+                dsn,
+                decode_responses=True,
+                health_check_interval=30,
+                socket_keepalive=True,
+                retry_on_timeout=True,
+            )
     return _redis_client
+
+
+def reset_network_clients() -> None:
+    global _qdrant_client, _redis_client
+    if _db_service is not None and getattr(_db_service, "_conn", None) is not None:
+        try:
+            _db_service._conn.close()
+        except Exception:
+            pass
+        _db_service._conn = None
+    _qdrant_client = None
+    _redis_client = None
 
 
 def get_descriptor_service() -> QueryDescriptorService:

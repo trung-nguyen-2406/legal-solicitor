@@ -85,15 +85,152 @@ class LegalRAGState(TypedDict, total=False):
     matched_subqueries: Dict[str, str]
 
 
+def _brief_chunks(chunks: List[Dict[str, Any]], limit: int = 10) -> List[str]:
+    items: List[str] = []
+    for c in (chunks or [])[:limit]:
+        doc = c.get("doc_number") or ""
+        art = c.get("article_code") or ""
+        score = float(c.get("rerank_score") or c.get("rrf_score") or 0.0)
+        pin = " [PIN]" if c.get("is_pinned_amendment") else ""
+        items.append(f"{doc}:{art}:{score:.3f}{pin}")
+    return items
+
+
+def _build_span_inputs(node_name: str, state: Any) -> Dict[str, Any]:
+    if not isinstance(state, dict):
+        return {}
+    q = state.get("cleaned_query") or state.get("query") or ""
+    if node_name == "PureRedisCacheCheckNode":
+        return {"query": state.get("query", ""), "query_sha256": state.get("query_sha256", "")}
+    if node_name == "StructuredQueryDescriptorNode":
+        return {"query": state.get("query", "")}
+    if node_name == "EncodeQueryAndLinearDomainProbeNode":
+        return {
+            "cleaned_query": q,
+            "doc_filters": state.get("doc_filters", []),
+            "article_filter": state.get("article_filter"),
+            "is_aggregation": state.get("is_aggregation", False),
+            "is_foreign_lang": state.get("is_foreign_lang", False),
+            "is_future_year": state.get("is_future_year", False),
+        }
+    if node_name in (
+        "DirectPointGetNode",
+        "BiDirectionalGraphExpandNode",
+        "FilteredSemanticOrLineageAggNode",
+        "StratifiedMinQuotaSearchNode",
+        "ScopedHybridRrfPrefetch50Node",
+    ):
+        return {
+            "query": q,
+            "doc_filters": state.get("doc_filters", []),
+            "article_filter": state.get("article_filter"),
+            "domain_prob": round(float(state.get("domain_prob") or 0.0), 4),
+            "top_chunks_in": _brief_chunks(state.get("top_chunks") or [], 5),
+        }
+    if node_name in (
+        "Top10PruneAndInt8RerankNode",
+        "DedupQuotaAndTemporalBoostNode",
+        "FinalChunkBankInt8RerankNode",
+        "DedupQuotaAndAmendmentPinNode",
+    ):
+        return {
+            "query": q,
+            "rrf_candidates_count": len(state.get("rrf_candidates") or []),
+            "chunk_bank_size": len(state.get("chunk_bank") or {}),
+            "doc_filters": state.get("doc_filters", []),
+        }
+    if node_name in ("Qwen7BJsonPlannerNode", "ToolRewrittenSearchNode", "ToolGraphHopNode"):
+        return {
+            "query": state.get("query", ""),
+            "react_step": state.get("react_step", 0),
+            "max_score": round(float(state.get("max_score") or 0.0), 4),
+            "planner_decision": state.get("planner_decision"),
+            "pointer_scratchpad": state.get("pointer_scratchpad", []),
+            "chunk_bank_size": len(state.get("chunk_bank") or {}),
+        }
+    if node_name == "ConfidenceGate":
+        return {
+            "max_score": round(float(state.get("max_score") or 0.0), 4),
+            "is_aggregation": state.get("is_aggregation", False),
+            "top_chunks_count": len(state.get("top_chunks") or []),
+            "chunk_bank_size": len(state.get("chunk_bank") or {}),
+        }
+    if node_name == "GenerateHierarchicalInventoryTableNode":
+        return {
+            "chunk_bank_size": len(state.get("chunk_bank") or {}),
+            "top_chunks": _brief_chunks(state.get("top_chunks") or [], 5),
+        }
+    if node_name == "IRACGenerateNode":
+        return {
+            "query": state.get("query", ""),
+            "top_chunks": _brief_chunks(state.get("top_chunks") or [], 7),
+            "has_inventory_table": bool(state.get("inventory_table")),
+        }
+    return {
+        "request_id": state.get("request_id", ""),
+        "execution_mode": state.get("execution_mode", ""),
+        "abstained": state.get("abstained", False),
+        "abstain_reason": state.get("abstain_reason"),
+        "citations_count": len(state.get("citations") or []),
+        "top_chunks": _brief_chunks(state.get("top_chunks") or [], 5),
+    }
+
+
+def _build_span_outputs(node_name: str, result: Any, elapsed_ms: float) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return {"result": str(result), "node_latency_ms": elapsed_ms}
+    out: Dict[str, Any] = {}
+    for k, v in result.items():
+        if k == "latency_ms":
+            continue
+        if k == "dense_vector":
+            out["dense_vector_dim"] = len(v) if isinstance(v, list) else 0
+        elif k == "sparse_indices":
+            out["sparse_nonzero_terms"] = len(v) if isinstance(v, list) else 0
+        elif k == "sparse_values":
+            continue
+        elif k == "rrf_candidates" and isinstance(v, list):
+            out["rrf_candidates_count"] = len(v)
+            out["rrf_top10"] = _brief_chunks(v, 10)
+        elif k == "chunk_bank" and isinstance(v, dict):
+            vals = list(v.values())
+            out["chunk_bank_updates"] = len(vals)
+            out["chunk_bank_preview"] = _brief_chunks(vals, 10)
+        elif k == "top_chunks" and isinstance(v, list):
+            out["top_chunks_count"] = len(v)
+            out["top_chunks"] = _brief_chunks(v, 10)
+        elif k == "raw_logits" and isinstance(v, list):
+            out["raw_logits"] = [round(float(x), 3) for x in v[:12]]
+        elif k == "domain_prob" and isinstance(v, (int, float)):
+            out["domain_prob"] = round(float(v), 4)
+        elif k == "max_score" and isinstance(v, (int, float)):
+            out["max_score"] = round(float(v), 4)
+        else:
+            out[k] = v
+    if not out:
+        out["status"] = "ok"
+    out["node_latency_ms"] = elapsed_ms
+    return out
+
+
 def traced_node(node_name: str) -> Callable[..., Any]:
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         if inspect.iscoroutinefunction(func):
             @wraps(func)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 t0 = time.perf_counter()
-                with mlflow.start_span(name=node_name, span_type="NODE"):
+                state_arg = args[0] if args else kwargs.get("state")
+                with mlflow.start_span(name=node_name, span_type="NODE") as span:
+                    try:
+                        span.set_inputs(_build_span_inputs(node_name, state_arg))
+                    except Exception:
+                        pass
                     result = await func(*args, **kwargs)
-                elapsed = round((time.perf_counter() - t0) * 1000.0, 2)
+                    elapsed = round((time.perf_counter() - t0) * 1000.0, 2)
+                    try:
+                        span.set_outputs(_build_span_outputs(node_name, result, elapsed))
+                    except Exception:
+                        pass
                 result.setdefault("latency_ms", {})[node_name] = elapsed
                 return result
             return async_wrapper
@@ -101,9 +238,18 @@ def traced_node(node_name: str) -> Callable[..., Any]:
         @wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             t0 = time.perf_counter()
-            with mlflow.start_span(name=node_name, span_type="NODE"):
+            state_arg = args[0] if args else kwargs.get("state")
+            with mlflow.start_span(name=node_name, span_type="NODE") as span:
+                try:
+                    span.set_inputs(_build_span_inputs(node_name, state_arg))
+                except Exception:
+                    pass
                 result = func(*args, **kwargs)
-            elapsed = round((time.perf_counter() - t0) * 1000.0, 2)
+                elapsed = round((time.perf_counter() - t0) * 1000.0, 2)
+                try:
+                    span.set_outputs(_build_span_outputs(node_name, result, elapsed))
+                except Exception:
+                    pass
             result.setdefault("latency_ms", {})[node_name] = elapsed
             return result
         return sync_wrapper

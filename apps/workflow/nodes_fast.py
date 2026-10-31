@@ -281,18 +281,14 @@ def FilteredSemanticOrLineageAggNode(state: LegalRAGState) -> Dict[str, Any]:
         if not pts:
             continue
 
-        top1_rrf_score = float(getattr(pts[0], "score", 0.0) or 0.0)
-        elbow_threshold = 0.72 * top1_rrf_score
-
-        retained = [pt for pt in pts if float(getattr(pt, "score", 0.0) or 0.0) >= elbow_threshold]
-
-        for idx, pt in enumerate(retained):
+        for idx, pt in enumerate(pts):
             c_dict = _point_to_dict(pt, rank=idx + 1)
             if anchor_keywords:
                 title_txt = (c_dict.get("doc_title") or "").lower()
                 crumb_txt = (c_dict.get("breadcrumb") or "").lower()
-                combined_txt = f"{title_txt} {crumb_txt}"
-                if not any(ak in combined_txt for ak in anchor_keywords):
+                field_txt = (c_dict.get("legal_field") or "").lower()
+                combined_txt = f"{title_txt} {crumb_txt} {field_txt}"
+                if not any(ak.lower() in combined_txt for ak in anchor_keywords):
                     continue
             all_sweep_candidates.append(c_dict)
 

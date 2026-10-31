@@ -265,7 +265,7 @@ async def _run_single_case_with_retry(
                 else:
                     exec_path = "fast_path"
 
-                top_candidates = list((res.get("chunk_bank") or {}).values()) or res.get("top_chunks", [])
+                top_candidates = res.get("retrieved_candidates") or list((res.get("chunk_bank") or {}).values()) or res.get("top_chunks", [])
                 reranked_chunks = res.get("top_chunks", [])
                 answer = res.get("answer", "")
                 citations = res.get("citations", [])
@@ -398,6 +398,7 @@ async def _run_single_case_with_retry(
 
 async def evaluate_async(
     dataset_path: str = "tests/fixtures/eval_245_queries.json",
+    query_ids: Optional[List[str]] = None,
     limit: Optional[int] = None,
     start_idx: int = 0,
     experiment_name: str = "legal_rag_v4_production_benchmark",
@@ -415,7 +416,10 @@ async def evaluate_async(
             all_dataset = json.load(f)
 
         dataset_map = {item["query_id"]: item for item in all_dataset}
-        dataset = [dataset_map[qid] for qid in EXACT_51_IDS if qid in dataset_map]
+        if query_ids:
+            dataset = [dataset_map[qid] for qid in query_ids if qid in dataset_map]
+        else:
+            dataset = [dataset_map[qid] for qid in EXACT_51_IDS if qid in dataset_map]
         if start_idx > 0:
             dataset = dataset[start_idx:]
         if limit and limit > 0:
@@ -550,6 +554,7 @@ async def evaluate_async(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--query-ids", type=str, nargs="+", default=None, help="Filter to specific query ID(s)")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--start-idx", type=int, default=0)
     parser.add_argument("--experiment-name", type=str, default="legal_rag_v4_production_benchmark")
@@ -560,6 +565,7 @@ if __name__ == "__main__":
 
     asyncio.run(
         evaluate_async(
+            query_ids=args.query_ids,
             limit=args.limit,
             start_idx=args.start_idx,
             experiment_name=args.experiment_name,

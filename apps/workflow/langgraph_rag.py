@@ -28,7 +28,7 @@ from apps.workflow.nodes_output import (
     AbstainWithReasonNode,
     ConfidenceGate,
     GenerateHierarchicalInventoryTableNode,
-    IRACGenerateNode,
+    NaturalGroundedGenerateNode,
     ReturnResponseNode,
     SetCacheWithDocTagsNode,
     SetGlobalNegativeCacheNode,
@@ -69,7 +69,7 @@ EXPECTED_NODES = (
     "DedupQuotaAndAmendmentPinNode",
     "ConfidenceGate",
     "GenerateHierarchicalInventoryTableNode",
-    "IRACGenerateNode",
+    "NaturalGroundedGenerateNode",
     "SetCacheWithDocTagsNode",
     "AbstainWithReasonNode",
     "SetGlobalNegativeCacheNode",
@@ -128,7 +128,7 @@ def build_legal_rag_workflow() -> StateGraph:
 
     workflow.add_node("ConfidenceGate", ConfidenceGate)
     workflow.add_node("GenerateHierarchicalInventoryTableNode", GenerateHierarchicalInventoryTableNode)
-    workflow.add_node("IRACGenerateNode", IRACGenerateNode)
+    workflow.add_node("NaturalGroundedGenerateNode", NaturalGroundedGenerateNode)
     workflow.add_node("SetCacheWithDocTagsNode", SetCacheWithDocTagsNode)
     workflow.add_node("AbstainWithReasonNode", AbstainWithReasonNode)
     workflow.add_node("SetGlobalNegativeCacheNode", SetGlobalNegativeCacheNode)
@@ -183,7 +183,8 @@ def build_legal_rag_workflow() -> StateGraph:
             "rewritten_search": "ToolRewrittenSearchNode",
             "aggregation_sweep": "ToolAggregationSweepNode",
             "graph_hop": "ToolGraphHopNode",
-            "finish_react": "FinalChunkBankInt8RerankNode",
+            "finish_agg_direct": "ConfidenceGate",
+            "finish_rerank": "FinalChunkBankInt8RerankNode",
         },
     )
     workflow.add_edge("ToolRewrittenSearchNode", "Qwen7BJsonPlannerNode")
@@ -197,12 +198,12 @@ def build_legal_rag_workflow() -> StateGraph:
         route_after_confidence,
         {
             "grounded_inventory": "GenerateHierarchicalInventoryTableNode",
-            "grounded_direct_irac": "IRACGenerateNode",
+            "grounded_direct_natural": "NaturalGroundedGenerateNode",
             "ungrounded_abstain": "AbstainWithReasonNode",
         },
     )
-    workflow.add_edge("GenerateHierarchicalInventoryTableNode", "IRACGenerateNode")
-    workflow.add_edge("IRACGenerateNode", "SetCacheWithDocTagsNode")
+    workflow.add_edge("GenerateHierarchicalInventoryTableNode", "NaturalGroundedGenerateNode")
+    workflow.add_edge("NaturalGroundedGenerateNode", "SetCacheWithDocTagsNode")
     workflow.add_edge("SetCacheWithDocTagsNode", "WriteAuditLogToPostgresNode")
 
     workflow.add_edge("AbstainWithReasonNode", "SetGlobalNegativeCacheNode")

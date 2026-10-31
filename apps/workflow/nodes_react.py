@@ -59,7 +59,7 @@ def route_escalation_gate(state: LegalRAGState) -> Literal["keep_fast_path", "en
 
 def route_planner_action(
     state: LegalRAGState,
-) -> Literal["abstain", "rewritten_search", "aggregation_sweep", "graph_hop", "finish_react"]:
+) -> Literal["abstain", "rewritten_search", "aggregation_sweep", "graph_hop", "finish_agg_direct", "finish_rerank"]:
     decision = state.get("planner_decision") or {}
     act = decision.get("action")
     if act == "ABSTAIN":
@@ -70,7 +70,9 @@ def route_planner_action(
         return "aggregation_sweep"
     if act == "tool_graph_hop":
         return "graph_hop"
-    return "finish_react"
+    if state.get("is_aggregation"):
+        return "finish_agg_direct"
+    return "finish_rerank"
 
 
 @traced_node("Qwen7BJsonPlannerNode")

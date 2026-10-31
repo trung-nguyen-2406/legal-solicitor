@@ -92,6 +92,7 @@ class LegalRAGState(TypedDict, total=False):
     exact_agg_count: Optional[int]
     agg_catalog_items: List[Dict[str, Any]]
     retrieved_top_25: List[Dict[str, Any]]
+    retrieved_candidates: List[Dict[str, Any]]
 
 
 def _brief_chunks(chunks: List[Dict[str, Any]], limit: int = 10) -> List[str]:

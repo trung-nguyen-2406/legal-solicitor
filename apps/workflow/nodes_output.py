@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, List, Literal, Optional, Set
+from typing import Any, Callable, Dict, List, Literal, Optional, Set, Tuple
 import uuid
 from dotenv import load_dotenv
 from langgraph.config import get_stream_writer
@@ -12,10 +12,14 @@ from apps.services.cache_service import set_cache_with_doc_tags, set_negative_ca
 from apps.services.llm_service import (
     INVENTORY_TABLE_MAX_TOKENS,
     MAX_CONTEXT_TOKENS,
+    _chunk_to_citation,
+    _truncate_to_tokens,
     build_hierarchical_inventory_table,
     build_irac_context_and_citations,
+    estimate_tokens,
     get_llm_model_name,
     stream_irac_ollama,
+    stream_natural_ollama,
 )
 from apps.workflow.state import LegalRAGState, traced_node
 
@@ -46,6 +50,7 @@ RERANK_LATENCY_NODES = (
 
 GENERATION_LATENCY_NODES = (
     "GenerateHierarchicalInventoryTableNode",
+    "NaturalGroundedGenerateNode",
     "IRACGenerateNode",
     "AbstainWithReasonNode",
     "AbstainFastExitNode",
@@ -114,39 +119,117 @@ def ConfidenceGate(state: LegalRAGState) -> Dict[str, Any]:
     }
 
 
+def build_compact_aggregation_table(
+    catalog_items: List[Dict[str, Any]],
+    exact_count: Optional[int] = None,
+    max_tokens: int = INVENTORY_TABLE_MAX_TOKENS,
+) -> Tuple[str, List[Dict[str, Any]]]:
+    from collections import OrderedDict
+
+    grouped: OrderedDict[Tuple[str, str, Any], List[str]] = OrderedDict()
+    all_citations: List[Dict[str, Any]] = []
+    seen_pairs = set()
+
+    for item in catalog_items:
+        doc_num = (item.get("doc_number") or "N/A").strip()
+        doc_title = (item.get("doc_title") or "").strip()
+        yr = item.get("issued_year") or ""
+        art = (item.get("article_code") or item.get("clause_code") or "Điều ?").strip()
+
+        gkey = (doc_num, doc_title, yr)
+        if gkey not in grouped:
+            grouped[gkey] = []
+        if art not in grouped[gkey]:
+            grouped[gkey].append(art)
+
+        pair = (doc_num, art)
+        if pair not in seen_pairs:
+            seen_pairs.add(pair)
+            all_citations.append(_chunk_to_citation(item))
+
+    sorted_docs = sorted(grouped.items(), key=lambda kv: len(kv[1]), reverse=True)
+    num_docs = len(sorted_docs)
+    total_articles = exact_count if exact_count is not None else len(seen_pairs)
+
+    lines = [
+        "### THỐNG KÊ CHÍNH XÁC TỪ CƠ SỞ DỮ LIỆU",
+        f"- Tổng số điều khoản thỏa mãn: **{total_articles} điều khoản** (thuộc **{num_docs} văn bản**).",
+        "",
+        "| Số hiệu văn bản | Tên văn bản (rút gọn) | Năm | Số điều khớp | Danh sách Điều |",
+        "|---|---|---|---|---|",
+    ]
+
+    omitted_docs = 0
+    for idx, ((doc_num, doc_title, yr), arts) in enumerate(sorted_docs):
+        short_title = (doc_title[:45] + "...") if len(doc_title) > 48 else (doc_title or "-")
+        short_title = short_title.replace("|", "/")
+        art_count = len(arts)
+        art_str = ", ".join(arts[:12])
+        if len(arts) > 12:
+            art_str += f" (+{len(arts) - 12})"
+        row = f"| {doc_num} | {short_title} | {yr} | {art_count} | {art_str} |"
+
+        footer_reserve = 28 if idx < len(sorted_docs) - 1 else 0
+        candidate = "\n".join(lines + [row])
+        if estimate_tokens(candidate) + footer_reserve > max_tokens:
+            omitted_docs = len(sorted_docs) - idx
+            break
+        lines.append(row)
+
+    if omitted_docs > 0:
+        footer = f"| ... | (Còn {omitted_docs} văn bản khác đã rút gọn) | ... | ... | ... |"
+        if estimate_tokens("\n".join(lines + [footer])) <= max_tokens:
+            lines.append(footer)
+
+    table_md = "\n".join(lines)
+    if estimate_tokens(table_md) > max_tokens:
+        table_md = _truncate_to_tokens(table_md, max_tokens)
+
+    return table_md, all_citations
+
+
 def route_after_confidence(
     state: LegalRAGState,
-) -> Literal["grounded_inventory", "grounded_direct_irac", "ungrounded_abstain"]:
+) -> Literal["grounded_inventory", "grounded_direct_natural", "ungrounded_abstain"]:
     if not _is_grounded(state):
         return "ungrounded_abstain"
 
     is_agg = bool(state.get("is_aggregation", False))
-    chunk_bank = state.get("chunk_bank") or {}
-    if is_agg and len(chunk_bank) > INVENTORY_MIN_BANK_SIZE:
+    agg_count = state.get("exact_agg_count") or len(state.get("agg_catalog_items") or []) or len(state.get("chunk_bank") or {})
+    if is_agg and agg_count > 5:
         return "grounded_inventory"
 
-    return "grounded_direct_irac"
+    return "grounded_direct_natural"
 
 
 @traced_node("GenerateHierarchicalInventoryTableNode")
 def GenerateHierarchicalInventoryTableNode(state: LegalRAGState) -> Dict[str, Any]:
-    chunk_bank = state.get("chunk_bank") or {}
-    bank_chunks = list(chunk_bank.values()) if chunk_bank else list(state.get("top_chunks") or [])
-
-    table_md, all_citations = build_hierarchical_inventory_table(
-        chunks=bank_chunks,
-        max_tokens=INVENTORY_TABLE_MAX_TOKENS,
-    )
-
-    existing_top = list(state.get("top_chunks") or [])
-    if existing_top:
-        top_5 = existing_top[:5]
+    agg_items = state.get("agg_catalog_items")
+    if agg_items:
+        exact_count = state.get("exact_agg_count") or len(agg_items)
+        table_md, all_citations = build_compact_aggregation_table(
+            catalog_items=agg_items,
+            exact_count=exact_count,
+            max_tokens=INVENTORY_TABLE_MAX_TOKENS,
+        )
+        existing_top = list(state.get("top_chunks") or [])
+        top_5 = existing_top[:5] if existing_top else agg_items[:5]
     else:
-        top_5 = sorted(
-            bank_chunks,
-            key=lambda c: (float(c.get("rerank_score") or 0.0), float(c.get("rrf_score") or 0.0)),
-            reverse=True,
-        )[:5]
+        chunk_bank = state.get("chunk_bank") or {}
+        bank_chunks = list(chunk_bank.values()) if chunk_bank else list(state.get("top_chunks") or [])
+        table_md, all_citations = build_hierarchical_inventory_table(
+            chunks=bank_chunks,
+            max_tokens=INVENTORY_TABLE_MAX_TOKENS,
+        )
+        existing_top = list(state.get("top_chunks") or [])
+        if existing_top:
+            top_5 = existing_top[:5]
+        else:
+            top_5 = sorted(
+                bank_chunks,
+                key=lambda c: (float(c.get("rerank_score") or 0.0), float(c.get("rrf_score") or 0.0)),
+                reverse=True,
+            )[:5]
 
     return {
         "inventory_table": table_md,
@@ -155,8 +238,8 @@ def GenerateHierarchicalInventoryTableNode(state: LegalRAGState) -> Dict[str, An
     }
 
 
-@traced_node("IRACGenerateNode")
-async def IRACGenerateNode(state: LegalRAGState) -> Dict[str, Any]:
+@traced_node("NaturalGroundedGenerateNode")
+async def NaturalGroundedGenerateNode(state: LegalRAGState) -> Dict[str, Any]:
     request_id = _coerce_uuid(state.get("request_id"))
     top_chunks = state.get("top_chunks") or []
     inventory_table = state.get("inventory_table")
@@ -181,7 +264,7 @@ async def IRACGenerateNode(state: LegalRAGState) -> Dict[str, Any]:
 
     query = state.get("query") or ""
     answer_parts: List[str] = []
-    async for delta in stream_irac_ollama(query=query, context_block=context_block):
+    async for delta in stream_natural_ollama(query=query, context_block=context_block):
         answer_parts.append(delta)
         writer({"event": "token", "data": {"delta": delta}})
 
@@ -191,6 +274,10 @@ async def IRACGenerateNode(state: LegalRAGState) -> Dict[str, Any]:
         "citations": citations,
         "abstained": False,
     }
+
+
+# Backwards compatibility alias
+IRACGenerateNode = NaturalGroundedGenerateNode
 
 
 @traced_node("SetCacheWithDocTagsNode")
@@ -425,14 +512,24 @@ def ReturnResponseNode(state: LegalRAGState) -> Dict[str, Any]:
         "node_latencies_ms": latency_map,
     }
 
+    retrieved_candidates = (
+        state.get("agg_catalog_items")
+        if state.get("is_aggregation")
+        else (state.get("retrieved_top_25") or state.get("top_chunks", []))
+    )
+
     writer = _get_stream_writer_safe()
     writer({
         "event": "done",
         "data": {
             "request_id": request_id,
             "metrics": metrics,
+            "retrieved_candidates": retrieved_candidates,
         },
     })
 
-    return {"request_id": request_id}
+    return {
+        "request_id": request_id,
+        "retrieved_candidates": retrieved_candidates,
+    }
 

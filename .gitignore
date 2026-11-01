@@ -4,3 +4,8 @@ __pycache__
 models/
 docs/*_clean.txt
 docs/*_text.txt
+archive
+mlruns
+*.db
+mlflow.db-*
+.vscode

@@ -1,6 +1,9 @@
 from collections import defaultdict, deque
+import os
 import sys
 from typing import Dict, Set
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -22,7 +25,7 @@ def test_graph_mermaid_and_registered_nodes():
     assert not unexpected, f"Unexpected extra nodes registered: {sorted(unexpected)}"
     assert "PureRedisCacheCheckNode" in mermaid_str
     assert "Qwen7BJsonPlannerNode" in mermaid_str
-    assert "IRACGenerateNode" in mermaid_str
+    assert "NaturalGroundedGenerateNode" in mermaid_str
 
     print("=================================================================")
     print("COMPILED LANGGRAPH MERMAID TOPOLOGY (SDD v4.0 Section 3.4.3)")
@@ -106,16 +109,19 @@ def test_no_orphan_or_dead_end_nodes_and_required_edges():
         ("Qwen7BJsonPlannerNode", "AbstainWithReasonNode"),
         ("Qwen7BJsonPlannerNode", "ToolRewrittenSearchNode"),
         ("Qwen7BJsonPlannerNode", "ToolGraphHopNode"),
+        ("Qwen7BJsonPlannerNode", "ToolAggregationSweepNode"),
         ("Qwen7BJsonPlannerNode", "FinalChunkBankInt8RerankNode"),
+        ("Qwen7BJsonPlannerNode", "ConfidenceGate"),
         ("ToolRewrittenSearchNode", "Qwen7BJsonPlannerNode"),
         ("ToolGraphHopNode", "Qwen7BJsonPlannerNode"),
+        ("ToolAggregationSweepNode", "ConfidenceGate"),
         ("FinalChunkBankInt8RerankNode", "DedupQuotaAndAmendmentPinNode"),
         ("DedupQuotaAndAmendmentPinNode", "ConfidenceGate"),
         ("ConfidenceGate", "GenerateHierarchicalInventoryTableNode"),
-        ("ConfidenceGate", "IRACGenerateNode"),
+        ("ConfidenceGate", "NaturalGroundedGenerateNode"),
         ("ConfidenceGate", "AbstainWithReasonNode"),
-        ("GenerateHierarchicalInventoryTableNode", "IRACGenerateNode"),
-        ("IRACGenerateNode", "SetCacheWithDocTagsNode"),
+        ("GenerateHierarchicalInventoryTableNode", "NaturalGroundedGenerateNode"),
+        ("NaturalGroundedGenerateNode", "SetCacheWithDocTagsNode"),
         ("SetCacheWithDocTagsNode", "WriteAuditLogToPostgresNode"),
         ("AbstainWithReasonNode", "SetGlobalNegativeCacheNode"),
         ("SetGlobalNegativeCacheNode", "WriteAuditLogToPostgresNode"),

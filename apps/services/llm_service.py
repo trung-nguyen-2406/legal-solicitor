@@ -7,8 +7,17 @@ import httpx
 
 load_dotenv(".env")
 
-INVENTORY_TABLE_MAX_TOKENS = 600
+INVENTORY_TABLE_MAX_TOKENS = 1200
 MAX_CONTEXT_TOKENS = 2500
+
+NATURAL_SYSTEM_PROMPT = """Bạn là Trợ lý Tư vấn Pháp luật Việt Nam. Hãy trả lời câu hỏi của người dùng dựa TUYỆT ĐỐI vào ngữ cảnh pháp lý và bảng thống kê cơ sở dữ liệu được cung cấp.
+
+Nguyên tắc bắt buộc:
+1. Dựa hoàn toàn vào các đoạn trích văn bản và bảng thống kê cơ sở dữ liệu được cung cấp; tuyệt đối không tự bịa đặt hay suy diễn điều khoản bên ngoài.
+2. Nếu ngữ cảnh có tiêu đề '### THỐNG KÊ CHÍNH XÁC TỪ CƠ SỞ DỮ LIỆU', hãy nêu trực tiếp con số tổng và phân bố văn bản từ tiêu đề này; tuyệt đối không tự đếm lại các đoạn trích rút gọn.
+3. Nếu các quy định được cung cấp không trực tiếp điều chỉnh hoặc không trả lời được câu hỏi, hãy nêu rõ ràng, ngắn gọn trong 1-2 câu rằng không tìm thấy quy định phù hợp trong cơ sở dữ liệu hiện tại.
+4. Trình bày tự nhiên, mạch lạc, phù hợp với tính chất câu hỏi (nêu con số trực tiếp và bảng tóm tắt nếu là câu hỏi thống kê/liệt kê; dùng gạch đầu dòng rõ ràng nếu là điều kiện/thủ tục; chỉ phân tích lập luận khi giải quyết tình huống tranh chấp).
+5. Trích dẫn chính xác nguồn pháp lý theo định dạng `[Điều X, Số hiệu văn bản]` ngay sau nhận định tương ứng và trả lời bằng ngôn ngữ của câu hỏi."""
 
 IRAC_SYSTEM_PROMPT = """Bạn là Chuyên gia Tư vấn Pháp luật Việt Nam. Hãy phân tích và trả lời câu hỏi của người dùng theo đúng cấu trúc pháp lý IRAC dựa TUYỆT ĐỐI vào các đoạn trích văn bản quy phạm pháp luật được cung cấp trong ngữ cảnh.
 
@@ -218,6 +227,53 @@ async def stream_irac_ollama(
             "temperature": 0.1,
             "top_p": 0.90,
             "num_predict": 1024,
+        },
+    }
+
+    url = f"{ollama_host.rstrip('/')}/api/chat"
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client.stream("POST", url, json=payload) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line:
+                    continue
+                packet = json.loads(line)
+                delta = (packet.get("message") or {}).get("content") or ""
+                if delta:
+                    yield delta
+                if packet.get("done"):
+                    break
+
+
+async def stream_natural_ollama(
+    query: str,
+    context_block: str,
+    host: Optional[str] = None,
+    model: Optional[str] = None,
+    timeout: float = 90.0,
+) -> AsyncIterator[str]:
+    ollama_host = host or os.getenv("OLLAMA_HOST", "127.0.0.1:11434")
+    if not ollama_host.startswith("http"):
+        ollama_host = f"http://{ollama_host}"
+    model_name = model or get_llm_model_name()
+
+    user_prompt = (
+        f"NGỮ CẢNH PHÁP LÝ:\n{context_block}\n\n"
+        f"CÂU HỎI CỦA NGƯỜI DÙNG:\n{query}\n\n"
+        "Hãy trả lời chính xác, tự nhiên dựa trên ngữ cảnh pháp lý và trích dẫn `[Điều X, Số hiệu văn bản]`."
+    )
+
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": NATURAL_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "stream": True,
+        "options": {
+            "temperature": 0.1,
+            "top_p": 0.90,
+            "num_predict": 650,
         },
     }
 

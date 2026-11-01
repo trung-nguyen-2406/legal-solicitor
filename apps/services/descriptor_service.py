@@ -38,6 +38,26 @@ COUNTING_PREFIXES = [
     "danh sách các", "bao nhiêu"
 ]
 
+ADMIN_STOPWORDS = {
+    "quản lý", "doanh nghiệp", "nhà nước", "quy định", "ban hành",
+    "thực hiện", "hướng dẫn", "áp dụng", "cơ quan", "tổ chức", "cá nhân",
+    "thủ tục", "hồ sơ", "về", "các", "những", "cho", "của", "tại", "trong",
+    "theo", "đối với", "mới", "năm", "pháp luật", "văn bản"
+}
+
+BOILERPLATE_PATTERNS = [
+    r'^\s*(?:tổng\s+số|có\s+bao\s+nhiêu|thống\s+kê|liệt\s+kê|danh\s+sách|bao\s+nhiêu)\s+(?:các\s+)?(?:điều\s+khoản|điều\s+luật|quy\s+định|văn\s+bản|nghị\s+định|thông\s+tư)?\s*(?:quy\s+định)?\s*(?:về|liên\s+quan\s+đến)?\s*',
+    r'^\s*(?:các|những)\s+quy\s+định\s+về\s*',
+    r'^\s*quy\s+định\s+về\s*',
+]
+
+TEMPORAL_BOILERPLATE_PATTERNS = [
+    r'\b(?:mới\s+)?ban\s+hành\s+năm\s+\d{4}(?:\s*[-–—/]\s*\d{4})?\b',
+    r'\bnăm\s+\d{4}\s*[-–—/]\s*\d{4}\b',
+    r'\b(?:theo\s+)?quy\s+định\s+mới\s+nhất\b',
+    r'\bmới\s+nhất\b',
+]
+
 
 class QueryDescriptorService:
     def __init__(self, max_valid_year: int = MAX_VALID_ISSUED_YEAR):
@@ -117,27 +137,73 @@ class QueryDescriptorService:
                     is_future_year = True
                     break
 
+        has_list_cue = bool(
+            re.search(r'\bnhững\b.*\bnào\b', q_lower)
+            or re.search(r'\bcác\s+quy\s+định\s+về\b', q_lower)
+            or re.search(r'\bdanh\s+sách\b', q_lower)
+            or re.search(r'\bmấy\s+điều\b', q_lower)
+            or re.search(r'\bbao\s+gồm\s+những\b', q_lower)
+        )
+
+        year_from: Optional[int] = None
+        year_to: Optional[int] = None
+        y_range_m = re.search(r'\b(?:năm\s+)?(\d{4})\s*[-–—/]\s*(\d{4})\b', normalized)
+        if y_range_m:
+            year_from = int(y_range_m.group(1))
+            year_to = int(y_range_m.group(2))
+        else:
+            y_single_m = re.search(r'\bnăm\s+(\d{4})\b', normalized, re.IGNORECASE)
+            if y_single_m:
+                year_from = int(y_single_m.group(1))
+                year_to = int(y_single_m.group(1))
+
         has_counting = any(k in q_lower for k in COUNTING_PREFIXES)
         has_structural = any(k in q_lower for k in STRUCTURAL_NOUNS)
         has_substantive = any(k in q_lower for k in SUBSTANTIVE_NOUNS)
 
-        if has_counting and has_structural and not has_substantive:
+        if (has_counting or has_list_cue) and has_structural and not has_substantive:
             is_aggregation = True
-            cleaned = normalized
         elif has_counting and has_substantive:
             is_aggregation = False
-            cleaned = normalized
-            for prefix in COUNTING_PREFIXES:
-                cleaned = re.sub(rf'^\s*{re.escape(prefix)}\s*', '', cleaned, flags=re.IGNORECASE)
         else:
-            is_aggregation = has_counting and has_structural
-            cleaned = normalized
+            is_aggregation = bool((has_counting or has_list_cue) and has_structural)
 
+        cleaned = normalized
+        for pat in BOILERPLATE_PATTERNS:
+            cleaned = re.sub(pat, '', cleaned, flags=re.IGNORECASE)
+        for pat in TEMPORAL_BOILERPLATE_PATTERNS:
+            cleaned = re.sub(pat, '', cleaned, flags=re.IGNORECASE)
         cleaned = self.doc_pattern.sub('', cleaned)
         cleaned = self.art_pattern.sub('', cleaned)
+        cleaned = re.sub(r'[?!\.]', '', cleaned)
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         if len(cleaned) < 5:
             cleaned = normalized
+
+        sub_queries: List[str] = []
+        if is_aggregation or ("," in cleaned or " và " in cleaned.lower() or " hoặc " in cleaned.lower()):
+            parts = re.split(r'[,;]|\s+(?:và|hoặc)\s+', cleaned, flags=re.IGNORECASE)
+            sub_queries = [p.strip() for p in parts if len(p.strip()) > 2][:4]
+        if not sub_queries:
+            sub_queries = [cleaned]
+
+        anchor_keywords: List[str] = []
+        for sq in sub_queries:
+            temp = sq.lower()
+            for stop in sorted(ADMIN_STOPWORDS, key=len, reverse=True):
+                temp = re.sub(rf'\b{re.escape(stop)}\b', ' ', temp)
+            temp = re.sub(r'\s+', ' ', temp).strip()
+            if temp and temp not in anchor_keywords:
+                anchor_keywords.append(temp)
+            words = temp.split()
+            if len(words) > 1:
+                for i in range(len(words) - 1):
+                    subphrase = f"{words[i]} {words[i+1]}"
+                    if subphrase not in anchor_keywords and subphrase not in ADMIN_STOPWORDS:
+                        anchor_keywords.append(subphrase)
+            for w in words:
+                if len(w) >= 3 and w not in anchor_keywords and w not in ADMIN_STOPWORDS:
+                    anchor_keywords.append(w)
 
         is_multistep = len(doc_filters) >= 2 or any(
             k in q_lower for k in ["so sánh", "sửa đổi", "bãi bỏ", "thay thế", "quan hệ", "xâu chuỗi", "xung đột"]
@@ -157,5 +223,10 @@ class QueryDescriptorService:
             "is_future_year": is_future_year,
             "word_count": len(normalized.split()),
             "is_multistep": is_multistep,
+            "sub_queries": sub_queries,
+            "anchor_keywords": anchor_keywords,
+            "has_list_cue": has_list_cue,
+            "year_from": year_from,
+            "year_to": year_to,
         }
 

@@ -28,7 +28,7 @@ from apps.workflow.nodes_output import (
     AbstainWithReasonNode,
     ConfidenceGate,
     GenerateHierarchicalInventoryTableNode,
-    IRACGenerateNode,
+    NaturalGroundedGenerateNode,
     ReturnResponseNode,
     SetCacheWithDocTagsNode,
     SetGlobalNegativeCacheNode,
@@ -39,6 +39,7 @@ from apps.workflow.nodes_react import (
     DedupQuotaAndAmendmentPinNode,
     FinalChunkBankInt8RerankNode,
     Qwen7BJsonPlannerNode,
+    ToolAggregationSweepNode,
     ToolGraphHopNode,
     ToolRewrittenSearchNode,
     route_escalation_gate,
@@ -63,11 +64,12 @@ EXPECTED_NODES = (
     "Qwen7BJsonPlannerNode",
     "ToolRewrittenSearchNode",
     "ToolGraphHopNode",
+    "ToolAggregationSweepNode",
     "FinalChunkBankInt8RerankNode",
     "DedupQuotaAndAmendmentPinNode",
     "ConfidenceGate",
     "GenerateHierarchicalInventoryTableNode",
-    "IRACGenerateNode",
+    "NaturalGroundedGenerateNode",
     "SetCacheWithDocTagsNode",
     "AbstainWithReasonNode",
     "SetGlobalNegativeCacheNode",
@@ -120,12 +122,13 @@ def build_legal_rag_workflow() -> StateGraph:
     workflow.add_node("Qwen7BJsonPlannerNode", Qwen7BJsonPlannerNode)
     workflow.add_node("ToolRewrittenSearchNode", ToolRewrittenSearchNode)
     workflow.add_node("ToolGraphHopNode", ToolGraphHopNode)
+    workflow.add_node("ToolAggregationSweepNode", ToolAggregationSweepNode)
     workflow.add_node("FinalChunkBankInt8RerankNode", FinalChunkBankInt8RerankNode)
     workflow.add_node("DedupQuotaAndAmendmentPinNode", DedupQuotaAndAmendmentPinNode)
 
     workflow.add_node("ConfidenceGate", ConfidenceGate)
     workflow.add_node("GenerateHierarchicalInventoryTableNode", GenerateHierarchicalInventoryTableNode)
-    workflow.add_node("IRACGenerateNode", IRACGenerateNode)
+    workflow.add_node("NaturalGroundedGenerateNode", NaturalGroundedGenerateNode)
     workflow.add_node("SetCacheWithDocTagsNode", SetCacheWithDocTagsNode)
     workflow.add_node("AbstainWithReasonNode", AbstainWithReasonNode)
     workflow.add_node("SetGlobalNegativeCacheNode", SetGlobalNegativeCacheNode)
@@ -178,12 +181,15 @@ def build_legal_rag_workflow() -> StateGraph:
         {
             "abstain": "AbstainWithReasonNode",
             "rewritten_search": "ToolRewrittenSearchNode",
+            "aggregation_sweep": "ToolAggregationSweepNode",
             "graph_hop": "ToolGraphHopNode",
-            "finish_react": "FinalChunkBankInt8RerankNode",
+            "finish_agg_direct": "ConfidenceGate",
+            "finish_rerank": "FinalChunkBankInt8RerankNode",
         },
     )
     workflow.add_edge("ToolRewrittenSearchNode", "Qwen7BJsonPlannerNode")
     workflow.add_edge("ToolGraphHopNode", "Qwen7BJsonPlannerNode")
+    workflow.add_edge("ToolAggregationSweepNode", "ConfidenceGate")
     workflow.add_edge("FinalChunkBankInt8RerankNode", "DedupQuotaAndAmendmentPinNode")
     workflow.add_edge("DedupQuotaAndAmendmentPinNode", "ConfidenceGate")
 
@@ -192,12 +198,12 @@ def build_legal_rag_workflow() -> StateGraph:
         route_after_confidence,
         {
             "grounded_inventory": "GenerateHierarchicalInventoryTableNode",
-            "grounded_direct_irac": "IRACGenerateNode",
+            "grounded_direct_natural": "NaturalGroundedGenerateNode",
             "ungrounded_abstain": "AbstainWithReasonNode",
         },
     )
-    workflow.add_edge("GenerateHierarchicalInventoryTableNode", "IRACGenerateNode")
-    workflow.add_edge("IRACGenerateNode", "SetCacheWithDocTagsNode")
+    workflow.add_edge("GenerateHierarchicalInventoryTableNode", "NaturalGroundedGenerateNode")
+    workflow.add_edge("NaturalGroundedGenerateNode", "SetCacheWithDocTagsNode")
     workflow.add_edge("SetCacheWithDocTagsNode", "WriteAuditLogToPostgresNode")
 
     workflow.add_edge("AbstainWithReasonNode", "SetGlobalNegativeCacheNode")

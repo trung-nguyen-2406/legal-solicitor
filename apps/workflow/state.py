@@ -84,6 +84,16 @@ class LegalRAGState(TypedDict, total=False):
     planner_decision: Optional[Dict[str, Any]]
     matched_subqueries: Dict[str, str]
 
+    sub_queries: List[str]
+    anchor_keywords: List[str]
+    has_list_cue: bool
+    year_from: Optional[int]
+    year_to: Optional[int]
+    exact_agg_count: Optional[int]
+    agg_catalog_items: List[Dict[str, Any]]
+    retrieved_top_25: List[Dict[str, Any]]
+    retrieved_candidates: List[Dict[str, Any]]
+
 
 def _brief_chunks(chunks: List[Dict[str, Any]], limit: int = 10) -> List[str]:
     items: List[str] = []

@@ -27,8 +27,8 @@ def _article_key(candidate: Dict[str, Any]) -> Any:
 
 def pre_rerank_diversify(
     rrf_candidates: List[Dict[str, Any]],
-    target_k: int = 12,
-    soft_doc_cap: int = 3,
+    target_k: int = 25,
+    soft_doc_cap: Optional[int] = None,
     doc_filters: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     if not rrf_candidates:
@@ -50,28 +50,7 @@ def pre_rerank_diversify(
             best_by_article[key] = cand
 
     unique_articles = [best_by_article[k] for k in article_order]
-    if doc_filters and len(doc_filters) == 1:
-        return unique_articles[:target_k]
-
-    selected: List[Dict[str, Any]] = []
-    overflow: List[Dict[str, Any]] = []
-    doc_counts: Dict[str, int] = defaultdict(int)
-
-    for cand in unique_articles:
-        doc = cand.get("doc_number") or ""
-        if not doc or doc_counts[doc] < soft_doc_cap:
-            selected.append(cand)
-            if doc:
-                doc_counts[doc] += 1
-            if len(selected) == target_k:
-                return selected
-        else:
-            overflow.append(cand)
-
-    if len(selected) < target_k and overflow:
-        selected.extend(overflow[: target_k - len(selected)])
-
-    return selected[:target_k]
+    return unique_articles[:target_k]
 
 
 def apply_temporal_dedup_quota_and_pin(
@@ -120,6 +99,13 @@ def apply_temporal_dedup_quota_and_pin(
                     doc_counts[doc] += 1
                 if len(top_selected) == top_n:
                     break
+
+        if len(top_selected) < top_n:
+            for item in deduped:
+                if item not in top_selected:
+                    top_selected.append(item)
+                    if len(top_selected) == top_n:
+                        break
 
     if db_service is not None and top_selected:
         doc_ids = [str(c["doc_id"]) for c in top_selected if c.get("doc_id")]

@@ -460,7 +460,6 @@ def Top10PruneAndInt8RerankNode(state: LegalRAGState) -> Dict[str, Any]:
     diversified = pre_rerank_diversify(
         rrf_candidates=rrf_candidates,
         target_k=25,
-        soft_doc_cap=5,
         doc_filters=state.get("doc_filters"),
     )
     hydrated = get_db_service().hydrate_chunks(diversified)

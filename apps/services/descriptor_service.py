@@ -40,6 +40,13 @@ LINEAGE_QUESTION_PATTERN = re.compile(
     r'\bvăn bản nào\b.*\b(?:sửa đổi|bổ sung|thay thế|bãi bỏ)\b|\b(?:còn|hết) hiệu lực\b|\blịch sử hiệu lực\b'
 )
 
+FOREIGN_COUNTRIES = "thái lan|nhật bản|hàn quốc|trung quốc|singapore|malaysia|indonesia|campuchia|hoa kỳ|ấn độ|canada"
+FOREIGN_JURISDICTION_PATTERN = re.compile(
+    rf'\b(?:pháp luật|bộ luật|luật|quy định)\b(?: \S+){{0,4}}? '
+    rf'(?:{FOREIGN_COUNTRIES}|(?:của|nước) (?:pháp(?! luật| lý)|đức|mỹ|nga|úc|lào)|nước anh)\b'
+    rf'|^(?:ở|tại) (?:{FOREIGN_COUNTRIES})\b'
+)
+
 ADMIN_STOPWORDS = {
     "quản lý", "doanh nghiệp", "nhà nước", "quy định", "ban hành",
     "thực hiện", "hướng dẫn", "áp dụng", "cơ quan", "tổ chức", "cá nhân",
@@ -167,6 +174,7 @@ class QueryDescriptorService:
         asks_lineage = bool(doc_filters) and not article_filter and bool(LINEAGE_QUESTION_PATTERN.search(q_lower))
         is_short_enough = len(normalized.split()) <= MAX_AGGREGATION_WORDS
         is_aggregation = (is_short_enough and (has_counting or (has_list_cue and has_structural))) or asks_lineage
+        is_foreign_jurisdiction = bool(FOREIGN_JURISDICTION_PATTERN.search(q_lower)) and "việt nam" not in q_lower
 
         cleaned = normalized
         for pat in BOILERPLATE_PATTERNS:
@@ -220,6 +228,7 @@ class QueryDescriptorService:
             "article_filter": article_filter,
             "is_aggregation": is_aggregation,
             "is_foreign_lang": is_foreign,
+            "is_foreign_jurisdiction": is_foreign_jurisdiction,
             "is_future_year": is_future_year,
             "word_count": len(normalized.split()),
             "is_multistep": is_multistep,

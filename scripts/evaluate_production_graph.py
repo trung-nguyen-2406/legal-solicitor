@@ -527,6 +527,7 @@ if __name__ == "__main__":
     parser.add_argument("--resume-run-id", type=str, default=None)
     parser.add_argument("--keep-cache", action="store_true", help="Do not clear pre-existing eval cache keys")
     parser.add_argument("--results-dir", type=str, default="results")
+    parser.add_argument("--dataset", type=str, default="tests/fixtures/eval_245_queries.json")
     args = parser.parse_args()
 
     asyncio.run(
@@ -539,5 +540,6 @@ if __name__ == "__main__":
             fresh_cache=not args.keep_cache,
             resume_run_id=args.resume_run_id,
             results_dir=args.results_dir,
+            dataset_path=args.dataset,
         )
     )

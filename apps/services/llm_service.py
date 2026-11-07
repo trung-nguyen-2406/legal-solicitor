@@ -19,7 +19,8 @@ Nguyên tắc bắt buộc:
 2. Nếu ngữ cảnh có tiêu đề '### THỐNG KÊ CHÍNH XÁC TỪ CƠ SỞ DỮ LIỆU', hãy nêu trực tiếp con số tổng và phân bố văn bản từ tiêu đề này; tuyệt đối không tự đếm lại các đoạn trích rút gọn.
 3. Nếu các quy định được cung cấp không trực tiếp điều chỉnh hoặc không trả lời được câu hỏi, hãy nêu rõ ràng, ngắn gọn trong 1-2 câu rằng không tìm thấy quy định phù hợp trong cơ sở dữ liệu hiện tại.
 4. Trình bày tự nhiên, mạch lạc, phù hợp với tính chất câu hỏi (nêu con số trực tiếp và bảng tóm tắt nếu là câu hỏi thống kê/liệt kê; dùng gạch đầu dòng rõ ràng nếu là điều kiện/thủ tục; chỉ phân tích lập luận khi giải quyết tình huống tranh chấp).
-5. Trích dẫn chính xác nguồn pháp lý theo định dạng `[Điều X, Số hiệu văn bản]` ngay sau nhận định tương ứng và trả lời bằng ngôn ngữ của câu hỏi."""
+5. Trích dẫn chính xác nguồn pháp lý theo định dạng `[Điều X, Số hiệu văn bản]` ngay sau nhận định tương ứng và trả lời bằng ngôn ngữ của câu hỏi.
+6. Trả lời súc tích, tối đa khoảng 150 từ, đi thẳng vào kết luận và viết trọn câu cuối cùng."""
 
 IRAC_SYSTEM_PROMPT = """Bạn là Chuyên gia Tư vấn Pháp luật Việt Nam. Hãy phân tích và trả lời câu hỏi của người dùng theo đúng cấu trúc pháp lý IRAC dựa TUYỆT ĐỐI vào các đoạn trích văn bản quy phạm pháp luật được cung cấp trong ngữ cảnh.
 

@@ -34,6 +34,8 @@ COUNTING_PATTERN = re.compile(
     r'|\bbao nhiêu (?:loại|cấp|khung|thủ tục|trường hợp|tiêu chuẩn|văn bản|điều|lần|quy định|nghị định|thông tư|hình thức|nhóm|bước)\b'
 )
 
+VIETNAMESE_LETTER_PATTERN = re.compile(r'[ăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]')
+
 ADMIN_STOPWORDS = {
     "quản lý", "doanh nghiệp", "nhà nước", "quy định", "ban hành",
     "thực hiện", "hướng dẫn", "áp dụng", "cơ quan", "tổ chức", "cá nhân",
@@ -67,7 +69,9 @@ class QueryDescriptorService:
         self.cjk_pattern = re.compile(r'[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]')
         self.foreign_words = {
             "what", "which", "who", "when", "where", "how", "why", "decree",
-            "circular", "article", "clause", "quelle", "quelles", "droit", "loi"
+            "circular", "article", "clause", "quelle", "quelles", "droit", "loi",
+            "of", "and", "for", "during", "requirements", "procedures",
+            "legal", "framework", "standards", "relative", "aux", "les", "des"
         }
 
         self.automaton = None
@@ -106,8 +110,9 @@ class QueryDescriptorService:
         normalized = self._replace_slang(normalized)
         q_lower = normalized.lower()
 
-        is_foreign = bool(self.cjk_pattern.search(normalized)) or any(
-            re.search(rf'\b{w}\b', q_lower) for w in self.foreign_words
+        is_foreign = bool(self.cjk_pattern.search(normalized)) or (
+            not VIETNAMESE_LETTER_PATTERN.search(q_lower)
+            and any(re.search(rf'\b{w}\b', q_lower) for w in self.foreign_words)
         )
 
         raw_docs = self.doc_pattern.findall(normalized)

@@ -4,7 +4,7 @@ import numpy as np
 from qdrant_client import models
 
 from apps.schemas.planner_models import AggregationSweepArgs, GraphHopArgs, RewrittenSearchArgs
-from apps.services.post_rerank_service import apply_temporal_dedup_quota_and_pin
+from apps.services.post_rerank_service import apply_temporal_dedup_quota_and_pin, confidence_score
 from apps.services.react_agent_service import (
     call_ollama_planner_async,
     execute_graph_hop,
@@ -355,8 +355,7 @@ def DedupQuotaAndAmendmentPinNode(state: LegalRAGState) -> Dict[str, Any]:
         return_all_deduped=True,
     )
 
-    non_pinned = [float(c.get("rerank_score", 0.0)) for c in top_chunks if not c.get("is_pinned_amendment")]
-    max_score = max(non_pinned, default=0.0)
+    max_score = confidence_score(top_chunks)
 
     bank_updates: Dict[str, Dict[str, Any]] = {c["chunk_id"]: c for c in top_chunks}
     for c in deduped_25:

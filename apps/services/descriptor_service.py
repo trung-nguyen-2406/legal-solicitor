@@ -36,6 +36,10 @@ COUNTING_PATTERN = re.compile(
 
 VIETNAMESE_LETTER_PATTERN = re.compile(r'[ăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]')
 
+LINEAGE_QUESTION_PATTERN = re.compile(
+    r'\bvăn bản nào\b.*\b(?:sửa đổi|bổ sung|thay thế|bãi bỏ)\b|\b(?:còn|hết) hiệu lực\b|\blịch sử hiệu lực\b'
+)
+
 ADMIN_STOPWORDS = {
     "quản lý", "doanh nghiệp", "nhà nước", "quy định", "ban hành",
     "thực hiện", "hướng dẫn", "áp dụng", "cơ quan", "tổ chức", "cá nhân",
@@ -160,8 +164,9 @@ class QueryDescriptorService:
 
         has_counting = bool(COUNTING_PATTERN.search(q_lower))
         has_structural = bool(STRUCTURAL_PATTERN.search(q_lower))
+        asks_lineage = bool(doc_filters) and not article_filter and bool(LINEAGE_QUESTION_PATTERN.search(q_lower))
         is_short_enough = len(normalized.split()) <= MAX_AGGREGATION_WORDS
-        is_aggregation = is_short_enough and (has_counting or (has_list_cue and has_structural))
+        is_aggregation = (is_short_enough and (has_counting or (has_list_cue and has_structural))) or asks_lineage
 
         cleaned = normalized
         for pat in BOILERPLATE_PATTERNS:

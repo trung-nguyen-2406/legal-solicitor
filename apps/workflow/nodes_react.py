@@ -18,7 +18,7 @@ from apps.services.resources import (
     get_int8_reranker,
     get_qdrant_client,
 )
-from apps.workflow.nodes_fast import _active_filter, _point_to_dict, _build_inventory_table
+from apps.workflow.nodes_fast import LINEAGE_KEYWORDS, _active_filter, _point_to_dict, _build_inventory_table
 from apps.workflow.state import LegalRAGState, traced_node
 
 CIRCUIT_BREAKER_MAX_STEPS = 2
@@ -41,7 +41,7 @@ def route_escalation_gate(state: LegalRAGState) -> Literal["keep_fast_path", "en
     if fast_branch == "aggregation":
         asks_lineage = bool(state.get("doc_filters")) and any(
             kw in (state.get("query") or "").lower()
-            for kw in ("sửa đổi", "bổ sung", "thay thế", "bãi bỏ", "lần sửa đổi", "lịch sử hiệu lực")
+            for kw in LINEAGE_KEYWORDS
         )
         is_grounded_agg = (exact_agg_count > 0 and max_score >= 0.35) or (asks_lineage and len(top_chunks) > 0)
         if is_grounded_agg and not is_foreign:

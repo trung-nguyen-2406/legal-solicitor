@@ -26,7 +26,7 @@ AGG_VERBATIM_LIMIT = 15
 
 RE_NON_LATIN = re.compile(r"[\u0400-\u04ff\u0600-\u06ff\u0e00-\u0e7f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]")
 RE_YEAR_FILTER = re.compile(r"\bnăm\s+(19\d{2}|20\d{2})\b", re.IGNORECASE)
-LINEAGE_KEYWORDS = ("sửa đổi", "bổ sung", "thay thế", "bãi bỏ", "lần sửa đổi", "lịch sử hiệu lực")
+LINEAGE_KEYWORDS = ("sửa đổi", "bổ sung", "thay thế", "bãi bỏ", "lần sửa đổi", "lịch sử hiệu lực", "còn hiệu lực", "hết hiệu lực")
 LEGAL_FIELD_KEYWORDS = (
     "xây dựng", "đô thị", "thương mại", "doanh nghiệp", "đầu tư", "chứng khoán",
     "bảo hiểm", "tiền tệ", "ngân hàng", "thuế", "tài chính", "lao động", "giáo dục",

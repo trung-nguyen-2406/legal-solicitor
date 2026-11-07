@@ -17,6 +17,12 @@ def _extract_issued_year(candidate: Dict[str, Any]) -> int:
     return int(m.group(1)) if m else TEMPORAL_BASE_YEAR
 
 
+def confidence_score(top_chunks: List[Dict[str, Any]]) -> float:
+    """Relevance of the best chunk, before the recency boost, so a new document cannot pass on age."""
+    logits = [float(c["raw_logit"]) for c in top_chunks if not c.get("is_pinned_amendment") and "raw_logit" in c]
+    return 1.0 / (1.0 + math.exp(-max(logits))) if logits else 0.0
+
+
 def _article_key(candidate: Dict[str, Any]) -> Any:
     doc = candidate.get("doc_number") or ""
     art = candidate.get("article_code") or ""

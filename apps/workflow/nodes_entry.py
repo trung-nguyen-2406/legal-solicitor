@@ -117,7 +117,7 @@ def EncodeQueryAndLinearDomainProbeNode(state: LegalRAGState) -> Dict[str, Any]:
 
 
 def route_after_domain_probe(state: LegalRAGState) -> Literal["fast_abstain", "fast_retrieval"]:
-    if state.get("is_future_year", False):
+    if state.get("is_future_year", False) or state.get("is_foreign_jurisdiction", False):
         return "fast_abstain"
     if (
         state.get("domain_prob", 1.0) < 0.15

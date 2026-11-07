@@ -57,6 +57,7 @@ class LegalRAGState(TypedDict, total=False):
     article_filter: Optional[str]
     is_aggregation: bool
     is_foreign_lang: bool
+    is_foreign_jurisdiction: bool
     start_time: float
     react_step: int
     pointer_scratchpad: Annotated[List[Dict[str, Any]], reduce_scratchpad]

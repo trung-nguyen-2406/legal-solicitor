@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import httpx
 from qdrant_client import QdrantClient, models
 
+from apps.config import ollama_request_fields
 from apps.schemas.planner_models import GraphHopArgs, PlannerActionOutput, RewrittenSearchArgs
 from apps.services.db_service import _row_to_chunk, AMENDING_RELATIONS, DatabaseService
 from apps.services.embedding_service import EmbeddingService, Int8Reranker
@@ -11,7 +12,7 @@ from apps.services.embedding_service import EmbeddingService, Int8Reranker
 PLANNER_SYSTEM_PROMPT = """You are the JSON ReAct Planner for a Vietnamese Legal RAG system.
 Evaluate the user query and the current scratchpad pointers. Output ONLY valid JSON adhering to this schema:
 {
-  "thought": "brief reasoning <= 300 chars in Vietnamese",
+  "thought": "one short Vietnamese sentence, at most 15 words",
   "action": "ABSTAIN" | "tool_rewritten_search" | "tool_aggregation_sweep" | "tool_graph_hop" | "FINISH",
   "abstain_reason": "out_of_scope" | "harmful_or_fictional" | "insufficient_evidence" | null,
   "search_args": {"legal_queries": ["query1", "query2"], "year_from": null, "year_to": null, "legal_field": null} | null,
@@ -60,7 +61,7 @@ async def call_ollama_planner_async(
     ollama_host = host or os.getenv("OLLAMA_HOST", "127.0.0.1:11434")
     if not ollama_host.startswith("http"):
         ollama_host = f"http://{ollama_host}"
-    model_name = model or os.getenv("OLLAMA_MODEL_NAME", "qwen2.5:7b-instruct-q4_K_M")
+    model_name = model or os.getenv("OLLAMA_MODEL_NAME", "qwen3:4b-instruct-2507-q4_K_M")
 
     scratch_text = format_scratchpad(scratchpad)
     user_prompt = (
@@ -77,11 +78,7 @@ async def call_ollama_planner_async(
         ],
         "format": "json",
         "stream": False,
-        "options": {
-            "temperature": 0.0,
-            "top_p": 0.85,
-            "num_predict": 180,
-        },
+        **ollama_request_fields(temperature=0.0, top_p=0.85, num_predict=300),
     }
 
     url = f"{ollama_host.rstrip('/')}/api/chat"

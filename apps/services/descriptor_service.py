@@ -9,6 +9,7 @@ except ImportError:
     ahocorasick = None
 
 MAX_VALID_ISSUED_YEAR = 2026
+MAX_AGGREGATION_WORDS = 40
 
 LEGAL_REPLACEMENTS = {
     "hồi tố": "hiệu lực trở về trước",
@@ -23,20 +24,28 @@ LEGAL_REPLACEMENTS = {
     "hóa đơn khống": "hóa đơn không có hàng hóa dịch vụ thực tế",
 }
 
-STRUCTURAL_NOUNS = [
-    "văn bản", "luật", "nghị định", "thông tư", "điều", "khoản",
-    "quy định mới", "lần sửa đổi", "điều luật", "bộ luật", "quyết định"
-]
+STRUCTURAL_PATTERN = re.compile(
+    r'(?<!pháp )\b(?:văn bản|bộ luật|điều luật|luật|nghị định|thông tư|quyết định|quy định mới|lần sửa đổi|khoản|điều)\b'
+    r'(?! (?:kiện|chỉnh|tra|trị|hành|khiển|phối|tiết|tiền|thu|chi|vay|nợ|phí))'
+)
 
-SUBSTANTIVE_NOUNS = [
-    "khung giờ", "cấp độ", "trường hợp", "thủ tục", "hồ sơ",
-    "loại giấy phép", "mức phạt", "hành vi", "tiêu chí", "điều kiện"
-]
+COUNTING_PATTERN = re.compile(
+    r'(?<!vụ )\b(?:thống kê|tổng hợp|liệt kê|danh sách (?:các|những|tất cả)|tổng số|số lượng|số lần)\b'
+    r'|\bbao nhiêu (?:loại|cấp|khung|thủ tục|trường hợp|tiêu chuẩn|văn bản|điều|lần|quy định|nghị định|thông tư|hình thức|nhóm|bước)\b'
+)
 
-COUNTING_PREFIXES = [
-    "có bao nhiêu", "tổng số", "thống kê", "liệt kê các",
-    "danh sách các", "bao nhiêu"
-]
+VIETNAMESE_LETTER_PATTERN = re.compile(r'[ăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]')
+
+LINEAGE_QUESTION_PATTERN = re.compile(
+    r'\bvăn bản nào\b.*\b(?:sửa đổi|bổ sung|thay thế|bãi bỏ)\b|\b(?:còn|hết) hiệu lực\b|\blịch sử hiệu lực\b'
+)
+
+FOREIGN_COUNTRIES = "thái lan|nhật bản|hàn quốc|trung quốc|singapore|malaysia|indonesia|campuchia|hoa kỳ|ấn độ|canada"
+FOREIGN_JURISDICTION_PATTERN = re.compile(
+    rf'\b(?:pháp luật|bộ luật|luật|quy định)\b(?: \S+){{0,4}}? '
+    rf'(?:{FOREIGN_COUNTRIES}|(?:của|nước) (?:pháp(?! luật| lý)|đức|mỹ|nga|úc|lào)|nước anh)\b'
+    rf'|^(?:ở|tại) (?:{FOREIGN_COUNTRIES})\b'
+)
 
 ADMIN_STOPWORDS = {
     "quản lý", "doanh nghiệp", "nhà nước", "quy định", "ban hành",
@@ -71,7 +80,9 @@ class QueryDescriptorService:
         self.cjk_pattern = re.compile(r'[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]')
         self.foreign_words = {
             "what", "which", "who", "when", "where", "how", "why", "decree",
-            "circular", "article", "clause", "quelle", "quelles", "droit", "loi"
+            "circular", "article", "clause", "quelle", "quelles", "droit", "loi",
+            "of", "and", "for", "during", "requirements", "procedures",
+            "legal", "framework", "standards", "relative", "aux", "les", "des"
         }
 
         self.automaton = None
@@ -110,8 +121,9 @@ class QueryDescriptorService:
         normalized = self._replace_slang(normalized)
         q_lower = normalized.lower()
 
-        is_foreign = bool(self.cjk_pattern.search(normalized)) or any(
-            re.search(rf'\b{w}\b', q_lower) for w in self.foreign_words
+        is_foreign = bool(self.cjk_pattern.search(normalized)) or (
+            not VIETNAMESE_LETTER_PATTERN.search(q_lower)
+            and any(re.search(rf'\b{w}\b', q_lower) for w in self.foreign_words)
         )
 
         raw_docs = self.doc_pattern.findall(normalized)
@@ -138,7 +150,7 @@ class QueryDescriptorService:
                     break
 
         has_list_cue = bool(
-            re.search(r'\bnhững\b.*\bnào\b', q_lower)
+            re.search(r'\bnhững(?: \S+){1,4} nào\b', q_lower)
             or re.search(r'\bcác\s+quy\s+định\s+về\b', q_lower)
             or re.search(r'\bdanh\s+sách\b', q_lower)
             or re.search(r'\bmấy\s+điều\b', q_lower)
@@ -157,16 +169,12 @@ class QueryDescriptorService:
                 year_from = int(y_single_m.group(1))
                 year_to = int(y_single_m.group(1))
 
-        has_counting = any(k in q_lower for k in COUNTING_PREFIXES)
-        has_structural = any(k in q_lower for k in STRUCTURAL_NOUNS)
-        has_substantive = any(k in q_lower for k in SUBSTANTIVE_NOUNS)
-
-        if (has_counting or has_list_cue) and has_structural and not has_substantive:
-            is_aggregation = True
-        elif has_counting and has_substantive:
-            is_aggregation = False
-        else:
-            is_aggregation = bool((has_counting or has_list_cue) and has_structural)
+        has_counting = bool(COUNTING_PATTERN.search(q_lower))
+        has_structural = bool(STRUCTURAL_PATTERN.search(q_lower))
+        asks_lineage = bool(doc_filters) and not article_filter and bool(LINEAGE_QUESTION_PATTERN.search(q_lower))
+        is_short_enough = len(normalized.split()) <= MAX_AGGREGATION_WORDS
+        is_aggregation = (is_short_enough and (has_counting or (has_list_cue and has_structural))) or asks_lineage
+        is_foreign_jurisdiction = bool(FOREIGN_JURISDICTION_PATTERN.search(q_lower)) and "việt nam" not in q_lower
 
         cleaned = normalized
         for pat in BOILERPLATE_PATTERNS:
@@ -220,6 +228,7 @@ class QueryDescriptorService:
             "article_filter": article_filter,
             "is_aggregation": is_aggregation,
             "is_foreign_lang": is_foreign,
+            "is_foreign_jurisdiction": is_foreign_jurisdiction,
             "is_future_year": is_future_year,
             "word_count": len(normalized.split()),
             "is_multistep": is_multistep,

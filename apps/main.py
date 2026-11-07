@@ -12,6 +12,7 @@ import httpx
 import numpy as np
 from pydantic import BaseModel, Field
 
+from apps.config import ollama_request_fields
 from apps.services.cache_service import invalidate_by_doc
 from apps.services.llm_service import get_llm_model_name
 from apps.services.resources import (
@@ -50,8 +51,7 @@ async def _warmup_ollama_keep_alive() -> bool:
         "model": get_llm_model_name(),
         "messages": [{"role": "user", "content": "OK"}],
         "stream": False,
-        "keep_alive": "30m",
-        "options": {"num_predict": 1, "temperature": 0.0},
+        **ollama_request_fields(num_predict=1, temperature=0.0),
     }
     try:
         async with httpx.AsyncClient(timeout=45.0) as client:

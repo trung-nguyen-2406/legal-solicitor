@@ -5,6 +5,8 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 import httpx
 
+from apps.config import ollama_request_fields, settings
+
 load_dotenv(".env")
 
 INVENTORY_TABLE_MAX_TOKENS = 1200
@@ -17,7 +19,8 @@ Nguyên tắc bắt buộc:
 2. Nếu ngữ cảnh có tiêu đề '### THỐNG KÊ CHÍNH XÁC TỪ CƠ SỞ DỮ LIỆU', hãy nêu trực tiếp con số tổng và phân bố văn bản từ tiêu đề này; tuyệt đối không tự đếm lại các đoạn trích rút gọn.
 3. Nếu các quy định được cung cấp không trực tiếp điều chỉnh hoặc không trả lời được câu hỏi, hãy nêu rõ ràng, ngắn gọn trong 1-2 câu rằng không tìm thấy quy định phù hợp trong cơ sở dữ liệu hiện tại.
 4. Trình bày tự nhiên, mạch lạc, phù hợp với tính chất câu hỏi (nêu con số trực tiếp và bảng tóm tắt nếu là câu hỏi thống kê/liệt kê; dùng gạch đầu dòng rõ ràng nếu là điều kiện/thủ tục; chỉ phân tích lập luận khi giải quyết tình huống tranh chấp).
-5. Trích dẫn chính xác nguồn pháp lý theo định dạng `[Điều X, Số hiệu văn bản]` ngay sau nhận định tương ứng và trả lời bằng ngôn ngữ của câu hỏi."""
+5. Trích dẫn chính xác nguồn pháp lý theo định dạng `[Điều X, Số hiệu văn bản]` ngay sau nhận định tương ứng và trả lời bằng ngôn ngữ của câu hỏi.
+6. Trả lời súc tích, tối đa khoảng 150 từ, đi thẳng vào kết luận và viết trọn câu cuối cùng."""
 
 IRAC_SYSTEM_PROMPT = """Bạn là Chuyên gia Tư vấn Pháp luật Việt Nam. Hãy phân tích và trả lời câu hỏi của người dùng theo đúng cấu trúc pháp lý IRAC dựa TUYỆT ĐỐI vào các đoạn trích văn bản quy phạm pháp luật được cung cấp trong ngữ cảnh.
 
@@ -34,7 +37,7 @@ Nguyên tắc bắt buộc:
 
 
 def get_llm_model_name() -> str:
-    return os.getenv("OLLAMA_MODEL_NAME", "qwen2.5:7b-instruct-q4_K_M")
+    return os.getenv("OLLAMA_MODEL_NAME", "qwen3:4b-instruct-2507-q4_K_M")
 
 
 def estimate_tokens(text: str) -> int:
@@ -223,11 +226,7 @@ async def stream_irac_ollama(
             {"role": "user", "content": user_prompt},
         ],
         "stream": True,
-        "options": {
-            "temperature": 0.1,
-            "top_p": 0.90,
-            "num_predict": 1024,
-        },
+        **ollama_request_fields(temperature=0.1, top_p=0.90, num_predict=1024),
     }
 
     url = f"{ollama_host.rstrip('/')}/api/chat"
@@ -270,11 +269,7 @@ async def stream_natural_ollama(
             {"role": "user", "content": user_prompt},
         ],
         "stream": True,
-        "options": {
-            "temperature": 0.1,
-            "top_p": 0.90,
-            "num_predict": 650,
-        },
+        **ollama_request_fields(temperature=0.1, top_p=0.90, num_predict=settings.ANSWER_MAX_TOKENS),
     }
 
     url = f"{ollama_host.rstrip('/')}/api/chat"

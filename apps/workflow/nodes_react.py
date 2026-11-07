@@ -3,8 +3,9 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 import numpy as np
 from qdrant_client import models
 
+from apps.config import settings
 from apps.schemas.planner_models import AggregationSweepArgs, GraphHopArgs, RewrittenSearchArgs
-from apps.services.post_rerank_service import apply_temporal_dedup_quota_and_pin
+from apps.services.post_rerank_service import apply_temporal_dedup_quota_and_pin, confidence_score
 from apps.services.react_agent_service import (
     call_ollama_planner_async,
     execute_graph_hop,
@@ -18,14 +19,17 @@ from apps.services.resources import (
     get_int8_reranker,
     get_qdrant_client,
 )
-from apps.workflow.nodes_fast import _active_filter, _point_to_dict, _build_inventory_table
+from apps.workflow.nodes_fast import LINEAGE_KEYWORDS, _active_filter, _point_to_dict, _build_inventory_table
 from apps.workflow.state import LegalRAGState, traced_node
 
 CIRCUIT_BREAKER_MAX_STEPS = 2
-CIRCUIT_BREAKER_TIMEOUT_S = 35.0
+CIRCUIT_BREAKER_TIMEOUT_S = 50.0
 
 
 def route_escalation_gate(state: LegalRAGState) -> Literal["keep_fast_path", "enter_react"]:
+    if not settings.PLANNER_ENABLED:
+        return "keep_fast_path"
+
     top_chunks = state.get("top_chunks") or []
     fast_branch = state.get("fast_branch")
     is_foreign = bool(state.get("is_foreign_lang", False))
@@ -41,7 +45,7 @@ def route_escalation_gate(state: LegalRAGState) -> Literal["keep_fast_path", "en
     if fast_branch == "aggregation":
         asks_lineage = bool(state.get("doc_filters")) and any(
             kw in (state.get("query") or "").lower()
-            for kw in ("sửa đổi", "bổ sung", "thay thế", "bãi bỏ", "lần sửa đổi", "lịch sử hiệu lực")
+            for kw in LINEAGE_KEYWORDS
         )
         is_grounded_agg = (exact_agg_count > 0 and max_score >= 0.35) or (asks_lineage and len(top_chunks) > 0)
         if is_grounded_agg and not is_foreign:
@@ -355,8 +359,7 @@ def DedupQuotaAndAmendmentPinNode(state: LegalRAGState) -> Dict[str, Any]:
         return_all_deduped=True,
     )
 
-    non_pinned = [float(c.get("rerank_score", 0.0)) for c in top_chunks if not c.get("is_pinned_amendment")]
-    max_score = max(non_pinned, default=0.0)
+    max_score = confidence_score(top_chunks)
 
     bank_updates: Dict[str, Dict[str, Any]] = {c["chunk_id"]: c for c in top_chunks}
     for c in deduped_25:

@@ -18,20 +18,7 @@ load_dotenv("c:/Users/quytr/Documents/code/VCC-project/.env")
 
 from apps.services.embedding_service import EmbeddingService, Int8Reranker
 from apps.services.retriever_service import RetrieverService
-
-def match_target(cand: Dict[str, Any], target: Dict[str, Any]) -> bool:
-    cand_doc = cand.get("doc_number") or cand.get("document_number", "")
-    target_doc = target.get("doc_number", "")
-    if cand_doc != target_doc:
-        return False
-    
-    target_art = target.get("article_code")
-    if not target_art:
-        return True
-    
-    cand_art = cand.get("article_code", "")
-    cand_crumb = cand.get("breadcrumb", "")
-    return cand_art == target_art or target_art in cand_crumb
+from scripts.eval_common import match_target
 
 def evaluate(
     dataset_path: str = "tests/fixtures/eval_245_queries.json",

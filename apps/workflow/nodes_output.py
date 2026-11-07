@@ -27,6 +27,7 @@ load_dotenv(".env")
 logger = logging.getLogger(__name__)
 
 CONFIDENCE_MIN_SCORE = 0.20
+FOREIGN_CONFIDENCE_MIN_SCORE = 0.02
 INVENTORY_MIN_BANK_SIZE = 15
 
 RETRIEVAL_LATENCY_NODES = (
@@ -95,7 +96,8 @@ def _is_grounded(state: LegalRAGState) -> bool:
     max_score = float(state.get("max_score", 0.0))
     if is_agg:
         return len(top_chunks) > 0
-    return max_score >= CONFIDENCE_MIN_SCORE and len(top_chunks) > 0
+    threshold = FOREIGN_CONFIDENCE_MIN_SCORE if state.get("is_foreign_lang") else CONFIDENCE_MIN_SCORE
+    return max_score >= threshold and len(top_chunks) > 0
 
 
 def _compute_stage_latencies(latency_ms: Dict[str, float]) -> Dict[str, int]:

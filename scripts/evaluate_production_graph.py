@@ -34,17 +34,7 @@ from apps.services.resources import (
 from apps.workflow.langgraph_rag import build_initial_state, compiled_graph
 from apps.workflow.nodes_output import flush_pending_audit_tasks
 from apps.workflow.state import _brief_chunks
-
-EXACT_51_IDS = [
-    "EVAL_001", "EVAL_002", "EVAL_003", "EVAL_004", "EVAL_059", "EVAL_060", "EVAL_061", "EVAL_062",
-    "EVAL_089", "EVAL_090", "EVAL_091", "EVAL_092", "EVAL_101", "EVAL_102", "EVAL_103", "EVAL_104",
-    "EVAL_141", "EVAL_142", "EVAL_143", "EVAL_144", "EVAL_171", "EVAL_172", "EVAL_173", "EVAL_174",
-    "EVAL_191", "EVAL_192", "EVAL_193", "EVAL_194", "EVAL_196", "EVAL_197", "EVAL_198", "EVAL_199",
-    "EVAL_204", "EVAL_205", "EVAL_206", "EVAL_207", "EVAL_208", "EVAL_209", "EVAL_210", "EVAL_211",
-    "EVAL_212", "EVAL_213", "EVAL_214", "EVAL_226", "EVAL_227", "EVAL_228", "EVAL_229", "EVAL_236",
-    "EVAL_237", "EVAL_238", "EVAL_239",
-]
-
+from scripts.eval_common import EXACT_51_IDS, score_retrieval
 
 def _set_prevent_idle_sleep(enable: bool) -> None:
     if os.name != "nt":
@@ -56,21 +46,6 @@ def _set_prevent_idle_sleep(enable: bool) -> None:
         ctypes.windll.kernel32.SetThreadExecutionState(flags)
     except Exception:
         pass
-
-
-def match_target(cand: Dict[str, Any], target: Dict[str, Any]) -> bool:
-    cand_doc = cand.get("doc_number") or cand.get("document_number", "")
-    target_doc = target.get("doc_number", "")
-    if cand_doc != target_doc:
-        return False
-
-    target_art = target.get("article_code")
-    if not target_art:
-        return True
-
-    cand_art = cand.get("article_code", "")
-    cand_crumb = cand.get("breadcrumb", "")
-    return cand_art == target_art or target_art in cand_crumb
 
 
 def compute_running_metrics(
@@ -287,6 +262,9 @@ async def _run_single_case_with_retry(
                     "hit_rate_at_5": 0.0,
                     "proportional_recall_at_5": 0.0,
                     "mrr_at_5": 0.0,
+                    "doc_hit_at_5": 0.0,
+                    "doc_hit_at_25": 0.0,
+                    "pool_recall": 0.0,
                     "abstain_success": None,
                     "answer_preview": (answer or "")[:200],
                     "citations_count": len(citations),
@@ -298,21 +276,7 @@ async def _run_single_case_with_retry(
                     record["abstain_success"] = 1.0 if is_success else 0.0
                     passed_case = is_success
                 else:
-                    matched_25 = [t for t in expected_targets if any(match_target(c, t) for c in top_candidates)]
-                    matched_5 = [t for t in expected_targets if any(match_target(c, t) for c in reranked_chunks)]
-                    num_exp = max(len(expected_targets), 1)
-
-                    record["hit_rate_at_25"] = 1.0 if len(matched_25) > 0 else 0.0
-                    record["proportional_recall_at_25"] = len(matched_25) / num_exp
-                    record["hit_rate_at_5"] = 1.0 if len(matched_5) > 0 else 0.0
-                    record["proportional_recall_at_5"] = len(matched_5) / num_exp
-
-                    mrr = 0.0
-                    for r_idx, c in enumerate(reranked_chunks, 1):
-                        if any(match_target(c, t) for t in expected_targets):
-                            mrr = 1.0 / r_idx
-                            break
-                    record["mrr_at_5"] = mrr
+                    record.update(score_retrieval(reranked_chunks, top_candidates, expected_targets))
                     passed_case = record["hit_rate_at_5"] == 1.0
 
                 root_span.set_outputs(
@@ -405,6 +369,7 @@ async def evaluate_async(
     run_name: str = "production_langgraph_eval_51q",
     fresh_cache: bool = True,
     resume_run_id: Optional[str] = None,
+    results_dir: str = "results",
 ):
     _set_prevent_idle_sleep(True)
     try:
@@ -425,10 +390,10 @@ async def evaluate_async(
         if limit and limit > 0:
             dataset = dataset[:limit]
 
-        os.makedirs("results", exist_ok=True)
-        details_file = "results/eval_production_details.json"
-        analytics_file = "results/benchmark_analytics_production.txt"
-        incorrect_file = "results/incorrect_retrievals_production.txt"
+        os.makedirs(results_dir, exist_ok=True)
+        details_file = os.path.join(results_dir, "eval_production_details.json")
+        analytics_file = os.path.join(results_dir, "benchmark_analytics_production.txt")
+        incorrect_file = os.path.join(results_dir, "incorrect_retrievals_production.txt")
 
         query_results: List[Dict[str, Any]] = []
         latencies: List[float] = []
@@ -561,6 +526,7 @@ if __name__ == "__main__":
     parser.add_argument("--run-name", type=str, default="production_langgraph_eval_51q")
     parser.add_argument("--resume-run-id", type=str, default=None)
     parser.add_argument("--keep-cache", action="store_true", help="Do not clear pre-existing eval cache keys")
+    parser.add_argument("--results-dir", type=str, default="results")
     args = parser.parse_args()
 
     asyncio.run(
@@ -572,5 +538,6 @@ if __name__ == "__main__":
             run_name=args.run_name,
             fresh_cache=not args.keep_cache,
             resume_run_id=args.resume_run_id,
+            results_dir=args.results_dir,
         )
     )

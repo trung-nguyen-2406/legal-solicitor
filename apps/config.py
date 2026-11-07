@@ -20,6 +20,8 @@ class Settings:
     OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
     # 300 truncated about 45% of answers mid-sentence; 450 leaves about 10% cut off.
     ANSWER_MAX_TOKENS: int = _env_int("ANSWER_MAX_TOKENS", 450)
+    # With the planner on, 12 English queries found nothing new and 3 valid ones were refused.
+    PLANNER_ENABLED: bool = os.getenv("PLANNER_ENABLED", "false").lower() == "true"
 
 
 settings = Settings()

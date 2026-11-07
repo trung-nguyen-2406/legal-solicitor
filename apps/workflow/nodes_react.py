@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 import numpy as np
 from qdrant_client import models
 
+from apps.config import settings
 from apps.schemas.planner_models import AggregationSweepArgs, GraphHopArgs, RewrittenSearchArgs
 from apps.services.post_rerank_service import apply_temporal_dedup_quota_and_pin, confidence_score
 from apps.services.react_agent_service import (
@@ -26,6 +27,9 @@ CIRCUIT_BREAKER_TIMEOUT_S = 50.0
 
 
 def route_escalation_gate(state: LegalRAGState) -> Literal["keep_fast_path", "enter_react"]:
+    if not settings.PLANNER_ENABLED:
+        return "keep_fast_path"
+
     top_chunks = state.get("top_chunks") or []
     fast_branch = state.get("fast_branch")
     is_foreign = bool(state.get("is_foreign_lang", False))

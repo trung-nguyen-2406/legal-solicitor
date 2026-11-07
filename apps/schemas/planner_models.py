@@ -1,5 +1,5 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class RewrittenSearchArgs(BaseModel):
@@ -23,12 +23,17 @@ class AggregationSweepArgs(BaseModel):
 
 
 class PlannerActionOutput(BaseModel):
-    thought: str = Field(..., max_length=300)
+    thought: str
     action: Literal["ABSTAIN", "tool_rewritten_search", "tool_aggregation_sweep", "tool_graph_hop", "FINISH"]
     abstain_reason: Optional[Literal["out_of_scope", "harmful_or_fictional", "insufficient_evidence"]] = None
     search_args: Optional[RewrittenSearchArgs] = None
     graph_args: Optional[GraphHopArgs] = None
     agg_args: Optional[AggregationSweepArgs] = None
+
+    @field_validator("thought")
+    @classmethod
+    def clip_thought(cls, thought: str) -> str:
+        return thought[:300]
 
     @model_validator(mode="after")
     def validate_action_arguments(self) -> "PlannerActionOutput":

@@ -12,7 +12,7 @@ from apps.services.embedding_service import EmbeddingService, Int8Reranker
 PLANNER_SYSTEM_PROMPT = """You are the JSON ReAct Planner for a Vietnamese Legal RAG system.
 Evaluate the user query and the current scratchpad pointers. Output ONLY valid JSON adhering to this schema:
 {
-  "thought": "brief reasoning <= 300 chars in Vietnamese",
+  "thought": "one short Vietnamese sentence, at most 15 words",
   "action": "ABSTAIN" | "tool_rewritten_search" | "tool_aggregation_sweep" | "tool_graph_hop" | "FINISH",
   "abstain_reason": "out_of_scope" | "harmful_or_fictional" | "insufficient_evidence" | null,
   "search_args": {"legal_queries": ["query1", "query2"], "year_from": null, "year_to": null, "legal_field": null} | null,
@@ -78,7 +78,7 @@ async def call_ollama_planner_async(
         ],
         "format": "json",
         "stream": False,
-        **ollama_request_fields(temperature=0.0, top_p=0.85, num_predict=180),
+        **ollama_request_fields(temperature=0.0, top_p=0.85, num_predict=300),
     }
 
     url = f"{ollama_host.rstrip('/')}/api/chat"

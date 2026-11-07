@@ -1,4 +1,5 @@
 import httpx
+from apps.config import ollama_request_fields
 from apps.services.embedding_service import Int8Reranker
 
 def test_ollama_local_qwen():
@@ -7,11 +8,7 @@ def test_ollama_local_qwen():
         "model": "qwen2.5:7b-instruct-q4_K_M",
         "prompt": "Xin chào, phản hồi bằng 1 từ: OK",
         "stream": False,
-        "options": {
-            "temperature": 0.1,
-            "top_p": 0.9,
-            "num_predict": 10
-        }
+        **ollama_request_fields(temperature=0.1, top_p=0.9, num_predict=10),
     }
     with httpx.Client(timeout=60.0) as client:
         resp = client.post(url, json=payload)

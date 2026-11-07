@@ -61,7 +61,8 @@ def captured(monkeypatch) -> List[Dict[str, Any]]:
 
 def assert_stable_load_options(payload: Dict[str, Any]) -> None:
     assert payload["options"]["num_ctx"] == settings.OLLAMA_NUM_CTX
-    assert payload["options"]["num_gpu"] == settings.OLLAMA_NUM_GPU
+    expected_gpu = settings.OLLAMA_NUM_GPU if settings.OLLAMA_NUM_GPU >= 0 else None
+    assert payload["options"].get("num_gpu") == expected_gpu
     assert payload["keep_alive"] == settings.OLLAMA_KEEP_ALIVE
 
 

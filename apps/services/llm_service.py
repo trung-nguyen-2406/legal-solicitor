@@ -37,7 +37,7 @@ Nguyên tắc bắt buộc:
 
 
 def get_llm_model_name() -> str:
-    return os.getenv("OLLAMA_MODEL_NAME", "qwen2.5:7b-instruct-q4_K_M")
+    return os.getenv("OLLAMA_MODEL_NAME", "qwen3:4b-instruct-2507-q4_K_M")
 
 
 def estimate_tokens(text: str) -> int:

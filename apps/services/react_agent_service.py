@@ -61,7 +61,7 @@ async def call_ollama_planner_async(
     ollama_host = host or os.getenv("OLLAMA_HOST", "127.0.0.1:11434")
     if not ollama_host.startswith("http"):
         ollama_host = f"http://{ollama_host}"
-    model_name = model or os.getenv("OLLAMA_MODEL_NAME", "qwen2.5:7b-instruct-q4_K_M")
+    model_name = model or os.getenv("OLLAMA_MODEL_NAME", "qwen3:4b-instruct-2507-q4_K_M")
 
     scratch_text = format_scratchpad(scratchpad)
     user_prompt = (

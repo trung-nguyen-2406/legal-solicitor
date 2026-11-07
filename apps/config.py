@@ -15,9 +15,8 @@ def _env_int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     OLLAMA_NUM_CTX: int = _env_int("OLLAMA_NUM_CTX", 4096)
-    # Layers on the GPU. Ollama's auto split uses ~2.3 GB of the 4 GB card; 22 measured 2.6x faster
-    # end to end, and above 24 weights spill into shared memory and prefill collapses. Negative = auto.
-    OLLAMA_NUM_GPU: int = _env_int("OLLAMA_NUM_GPU", 22)
+    # Layers on the GPU, negative = Ollama decides. A larger model on the 4 GB card needs this set by hand.
+    OLLAMA_NUM_GPU: int = _env_int("OLLAMA_NUM_GPU", -1)
     OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
     # 300 truncated about 45% of answers mid-sentence; 450 leaves about 10% cut off.
     ANSWER_MAX_TOKENS: int = _env_int("ANSWER_MAX_TOKENS", 450)

@@ -22,7 +22,7 @@ from apps.workflow.nodes_fast import LINEAGE_KEYWORDS, _active_filter, _point_to
 from apps.workflow.state import LegalRAGState, traced_node
 
 CIRCUIT_BREAKER_MAX_STEPS = 2
-CIRCUIT_BREAKER_TIMEOUT_S = 35.0
+CIRCUIT_BREAKER_TIMEOUT_S = 50.0
 
 
 def route_escalation_gate(state: LegalRAGState) -> Literal["keep_fast_path", "enter_react"]:

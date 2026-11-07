@@ -9,6 +9,7 @@ except ImportError:
     ahocorasick = None
 
 MAX_VALID_ISSUED_YEAR = 2026
+MAX_AGGREGATION_WORDS = 40
 
 LEGAL_REPLACEMENTS = {
     "hồi tố": "hiệu lực trở về trước",
@@ -23,20 +24,15 @@ LEGAL_REPLACEMENTS = {
     "hóa đơn khống": "hóa đơn không có hàng hóa dịch vụ thực tế",
 }
 
-STRUCTURAL_NOUNS = [
-    "văn bản", "luật", "nghị định", "thông tư", "điều", "khoản",
-    "quy định mới", "lần sửa đổi", "điều luật", "bộ luật", "quyết định"
-]
+STRUCTURAL_PATTERN = re.compile(
+    r'(?<!pháp )\b(?:văn bản|bộ luật|điều luật|luật|nghị định|thông tư|quyết định|quy định mới|lần sửa đổi|khoản|điều)\b'
+    r'(?! (?:kiện|chỉnh|tra|trị|hành|khiển|phối|tiết|tiền|thu|chi|vay|nợ|phí))'
+)
 
-SUBSTANTIVE_NOUNS = [
-    "khung giờ", "cấp độ", "trường hợp", "thủ tục", "hồ sơ",
-    "loại giấy phép", "mức phạt", "hành vi", "tiêu chí", "điều kiện"
-]
-
-COUNTING_PREFIXES = [
-    "có bao nhiêu", "tổng số", "thống kê", "liệt kê các",
-    "danh sách các", "bao nhiêu"
-]
+COUNTING_PATTERN = re.compile(
+    r'(?<!vụ )\b(?:thống kê|tổng hợp|liệt kê|danh sách (?:các|những|tất cả)|tổng số|số lượng|số lần)\b'
+    r'|\bbao nhiêu (?:loại|cấp|khung|thủ tục|trường hợp|tiêu chuẩn|văn bản|điều|lần|quy định|nghị định|thông tư|hình thức|nhóm|bước)\b'
+)
 
 ADMIN_STOPWORDS = {
     "quản lý", "doanh nghiệp", "nhà nước", "quy định", "ban hành",
@@ -138,7 +134,7 @@ class QueryDescriptorService:
                     break
 
         has_list_cue = bool(
-            re.search(r'\bnhững\b.*\bnào\b', q_lower)
+            re.search(r'\bnhững(?: \S+){1,4} nào\b', q_lower)
             or re.search(r'\bcác\s+quy\s+định\s+về\b', q_lower)
             or re.search(r'\bdanh\s+sách\b', q_lower)
             or re.search(r'\bmấy\s+điều\b', q_lower)
@@ -157,16 +153,10 @@ class QueryDescriptorService:
                 year_from = int(y_single_m.group(1))
                 year_to = int(y_single_m.group(1))
 
-        has_counting = any(k in q_lower for k in COUNTING_PREFIXES)
-        has_structural = any(k in q_lower for k in STRUCTURAL_NOUNS)
-        has_substantive = any(k in q_lower for k in SUBSTANTIVE_NOUNS)
-
-        if (has_counting or has_list_cue) and has_structural and not has_substantive:
-            is_aggregation = True
-        elif has_counting and has_substantive:
-            is_aggregation = False
-        else:
-            is_aggregation = bool((has_counting or has_list_cue) and has_structural)
+        has_counting = bool(COUNTING_PATTERN.search(q_lower))
+        has_structural = bool(STRUCTURAL_PATTERN.search(q_lower))
+        is_short_enough = len(normalized.split()) <= MAX_AGGREGATION_WORDS
+        is_aggregation = is_short_enough and (has_counting or (has_list_cue and has_structural))
 
         cleaned = normalized
         for pat in BOILERPLATE_PATTERNS:

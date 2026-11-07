@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import httpx
 from qdrant_client import QdrantClient, models
 
+from apps.config import ollama_request_fields
 from apps.schemas.planner_models import GraphHopArgs, PlannerActionOutput, RewrittenSearchArgs
 from apps.services.db_service import _row_to_chunk, AMENDING_RELATIONS, DatabaseService
 from apps.services.embedding_service import EmbeddingService, Int8Reranker
@@ -77,11 +78,7 @@ async def call_ollama_planner_async(
         ],
         "format": "json",
         "stream": False,
-        "options": {
-            "temperature": 0.0,
-            "top_p": 0.85,
-            "num_predict": 180,
-        },
+        **ollama_request_fields(temperature=0.0, top_p=0.85, num_predict=180),
     }
 
     url = f"{ollama_host.rstrip('/')}/api/chat"

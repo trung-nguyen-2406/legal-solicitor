@@ -5,6 +5,8 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 import httpx
 
+from apps.config import ollama_request_fields, settings
+
 load_dotenv(".env")
 
 INVENTORY_TABLE_MAX_TOKENS = 1200
@@ -223,11 +225,7 @@ async def stream_irac_ollama(
             {"role": "user", "content": user_prompt},
         ],
         "stream": True,
-        "options": {
-            "temperature": 0.1,
-            "top_p": 0.90,
-            "num_predict": 1024,
-        },
+        **ollama_request_fields(temperature=0.1, top_p=0.90, num_predict=1024),
     }
 
     url = f"{ollama_host.rstrip('/')}/api/chat"
@@ -270,11 +268,7 @@ async def stream_natural_ollama(
             {"role": "user", "content": user_prompt},
         ],
         "stream": True,
-        "options": {
-            "temperature": 0.1,
-            "top_p": 0.90,
-            "num_predict": 650,
-        },
+        **ollama_request_fields(temperature=0.1, top_p=0.90, num_predict=settings.ANSWER_MAX_TOKENS),
     }
 
     url = f"{ollama_host.rstrip('/')}/api/chat"
